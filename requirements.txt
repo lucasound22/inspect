@@ -4,3 +4,5 @@ fpdf
 feedparser
 google-generativeai
 Pillow
+requests
+python-docx
