@@ -22,7 +22,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- BRANDING & CSS ---
+# --- BRANDING & CSS (UAT FIXES: Responsiveness, Branding Removal, Cleanliness) ---
 def apply_custom_css():
     st.markdown("""
     <style>
@@ -45,20 +45,28 @@ def apply_custom_css():
             background-color: var(--bg);
         }
         
+        /* 1. HIDE STREAMLIT BRANDING & FOOTER (UAT Fix) */
+        footer {visibility: hidden;}
+        /* Hide the hamburger menu */
+        [data-testid="stSidebarContent"] > section > div.css-vk3y5n.e1fqn3694 { visibility: hidden; }
+        /* Target the top-right menu */
+        button[title="View source"] { display: none !important; }
+
         /* Sidebar Styling */
         [data-testid="stSidebar"] {
-            background-color: #FFFFFF;
+            background-color: var(--card-bg);
             border-right: 1px solid #E2E8F0;
         }
         
-        /* Professional Card Styling */
-        div.stContainer, div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] > div[data-testid="stVerticalBlock"] {
+        /* 2. PROFESSIONAL CARD STYLING (For mobile and desktop) */
+        div[data-testid*="stVerticalBlock"] > div[style*="flex-direction: column"] > div[data-testid*="stVerticalBlock"], 
+        div.stContainer {
             background-color: var(--card-bg);
             padding: 24px;
             border-radius: 12px;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
             border: 1px solid #E2E8F0;
-            margin-bottom: 1rem;
+            margin-bottom: 1.5rem;
         }
         
         /* Headers */
@@ -72,9 +80,11 @@ def apply_custom_css():
         h3 {
             border-left: 4px solid var(--accent);
             padding-left: 12px;
+            margin-top: 0.5rem;
+            margin-bottom: 0.8rem;
         }
         
-        /* Primary Buttons */
+        /* Primary Buttons (Full width on mobile) */
         .stButton button {
             background-color: var(--accent);
             color: white;
@@ -97,27 +107,37 @@ def apply_custom_css():
             font-weight: 700;
         }
         
-        /* Form Inputs */
+        /* Form Inputs (Ensure full width) */
+        .stTextInput, .stSelectbox, .stTextArea {
+            width: 100% !important;
+        }
         .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {
             border-radius: 6px;
             border: 1px solid #CBD5E1;
+            padding: 10px;
         }
         
-        /* Custom Defect Card */
+        /* Custom Defect Card for Draft Register */
         .defect-card {
             background: #F8FAFC;
-            border-left: 4px solid #F59E0B;
-            padding: 10px;
+            border-left: 4px solid #3B82F6; /* Use main accent for cleaner look */
+            padding: 12px;
             margin-bottom: 8px;
-            border-radius: 4px;
+            border-radius: 6px;
             font-size: 0.9em;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
         
+        /* Image hover for Inspection Page */
         .hover-zoom {
             transition: transform 0.3s ease;
             border-radius: 8px;
             cursor: zoom-in;
             border: 1px solid #E2E8F0;
+            width: 100%; /* Ensure image fills container */
+            max-width: 150px;
+            height: auto;
+            display: block;
         }
         .hover-zoom:hover {
             transform: scale(1.5);
@@ -125,19 +145,37 @@ def apply_custom_css():
             box-shadow: 0 10px 25px rgba(0,0,0,0.2);
         }
         
-        /* Financial Summary Box (for Final Report Page) */
+        /* Financial Summary Box */
         .financial-box {
             background-color: #EFF6FF;
             border: 1px solid #BFDBFE;
             border-radius: 8px;
-            padding: 15px;
+            padding: 20px;
             text-align: center;
-            margin-top: 20px;
+            margin-top: 10px;
         }
         .financial-total {
-            font-size: 1.5em;
+            font-size: 1.8em;
             font-weight: bold;
             color: #1E40AF;
+        }
+        
+        /* Info/Warning Boxes - make them match the aesthetic */
+        div[data-testid="stAlert"] {
+            border-radius: 8px;
+            padding: 12px;
+        }
+        
+        /* Ensure columns stack nicely on small screens */
+        @media (max-width: 768px) {
+            div[data-testid*="stVerticalBlock"] > div[style*="flex-direction: column"] > div[data-testid*="stVerticalBlock"], 
+            div.stContainer {
+                padding: 16px;
+                margin-bottom: 1rem;
+            }
+            .stSidebar {
+                padding-top: 10px;
+            }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -183,7 +221,6 @@ def calculate_total_repairs(defects):
     total_min = 0
     total_max = 0
     for d in defects:
-        # Use the cost value from the dictionary (which might have been edited in the data editor)
         c_min, c_max = parse_cost(d.get('cost', 'N/A'))
         total_min += c_min
         total_max += c_max
@@ -217,6 +254,7 @@ def init_db():
     if not c.fetchone():
         c.execute("INSERT INTO users VALUES ('admin', ?, 'admin', 'System Administrator')", (secure_pass,))
     else:
+        # Ensures the default password is set if needed for testing
         c.execute("UPDATE users SET password = ? WHERE username = 'admin'", (secure_pass,))
         
     conn.commit()
@@ -265,15 +303,13 @@ def delete_user(username):
         conn.close()
         return False
 
-# Report Management Functions (New Feature)
+# Report Management Functions
 def save_report(title, address, inspector, data):
     conn = get_db_connection()
     c = conn.cursor()
     saved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     data_json = json.dumps(data)
     
-    # Simple check for existing report (optional, can just insert new version)
-    # For now, we always insert a new record for version control
     c.execute("INSERT INTO reports (report_title, address, inspector, saved_at, report_data_json) VALUES (?, ?, ?, ?, ?)", 
               (title, address, inspector, saved_at, data_json))
     conn.commit()
@@ -283,10 +319,9 @@ def save_report(title, address, inspector, data):
 def get_all_reports(inspector=None):
     conn = get_db_connection()
     c = conn.cursor()
-    if inspector:
+    if inspector and st.session_state.get('role') != 'admin':
         c.execute("SELECT id, report_title, address, inspector, saved_at FROM reports WHERE inspector = ? ORDER BY saved_at DESC", (inspector,))
     else:
-        # Admins see all, others only see their own (or all for simple mock)
         c.execute("SELECT id, report_title, address, inspector, saved_at FROM reports ORDER BY saved_at DESC")
     reports = c.fetchall()
     conn.close()
@@ -314,7 +349,7 @@ def delete_report(report_id):
         conn.close()
         return False
 
-# --- AI ENGINE ---
+# --- AI ENGINE (UAT FIX: Improved Australian Property Lookup Prompt) ---
 class AIEngine:
     def __init__(self, api_key):
         self.api_key = api_key
@@ -357,9 +392,14 @@ class AIEngine:
     def get_property_history(self, address):
         if not self.client: return None, "N/A"
         
-        system_prompt = "You are a specialized data extractor for Australian property records. Given the search results for a property address, find and return ONLY the following information, formatted as a JSON string: {'year_built': [Four digit year or 'N/A'], 'property_type': [House/Unit/Apartment/Townhouse or 'N/A']}. Base your answer ONLY on the provided search results. Do not add any text before or after the JSON."
+        # UAT FIX: More specific prompt for reliable Australian data extraction
+        system_prompt = """
+        You are a specialized data extractor for Australian property records. Given the search results for an Australian property address, find and return ONLY the following two pieces of information, formatted as a JSON string: 
+        {'year_built': [Four digit year (e.g., '1985') or 'N/A'], 'property_type': [The most specific type, e.g., 'House', 'Unit', 'Townhouse', 'Apartment', or 'N/A']}.
+        Base your answer ONLY on the provided search results from reliable Australian real estate or government websites (like Domain, Realestate.com.au). Do not add any text before or after the JSON.
+        """
 
-        prompt = f"Find the year built and property type for the property at {address}. Focus on reliable Australian real estate or government records."
+        prompt = f"Using Google Search, find the official year built and the property classification for the Australian property located at: {address}."
         
         try:
             response = self.client.models.generate_content(
@@ -367,7 +407,7 @@ class AIEngine:
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     system_instruction=system_prompt,
-                    tools=[{"google_search": {}}],
+                    tools=[{"google_search": {} }],
                     response_mime_type="application/json",
                     response_schema={"type": "OBJECT", "properties": {"year_built": {"type": "STRING"}, "property_type": {"type": "STRING"}}}
                 )
@@ -403,7 +443,7 @@ class AIEngine:
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     system_instruction=system_prompt,
-                    tools=[{"google_search": {}}]
+                    tools=[{"google_search": {} }]
                 )
             )
             return response.text
@@ -413,7 +453,6 @@ class AIEngine:
         prompt = f"Provide a repair cost range in AUD for '{defect}' ({severity}) in Australia. Return ONLY the range string (e.g. '$500 - $1,000'). Do not add any other text."
         return self._generate_content_text(prompt)
     
-    # Other AI functions remain simplified, but accessible
     def generate_scope(self, defect, rec):
         prompt = f"Write a detailed Scope of Works for a tradesperson to rectify '{defect}'. Recommendation was: '{rec}'. Use Australian trade terminology."
         return self._generate_content_text(prompt)
@@ -438,7 +477,7 @@ class AIEngine:
 
 
 # --- EXPORT ENGINES (PDF/DOCX) ---
-# (PDF and DOCX functions are lengthy but necessary and are kept from the previous version)
+# (Export functions remain largely the same, ensuring compatibility with the data structure)
 
 class ReportPDF(FPDF):
     def __init__(self, company, license, logo_path, header_img, footer_img):
@@ -453,7 +492,7 @@ class ReportPDF(FPDF):
         if self.header_img:
             try: self.image(self.header_img, 0, 0, 210)
             except: pass
-        
+            
         if self.logo_path and not self.header_img:
             try: self.image(self.logo_path, 10, 8, 35)
             except: pass
@@ -588,6 +627,7 @@ def generate_docx(data, prop, inspector, co_details, summary, total_est_str):
     doc.add_heading('Defect Register', level=1)
     
     for item in data:
+        # Using a table to align image and text side-by-side (responsive layout for docx)
         table = doc.add_table(rows=1, cols=2)
         table.style = 'Table Grid'
         
@@ -643,12 +683,12 @@ def generate_docx(data, prop, inspector, co_details, summary, total_est_str):
 def login_page():
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
         st.markdown(get_logo_svg(), unsafe_allow_html=True)
         st.markdown("""
-        <div style='background:white; padding:40px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.05); margin-top:20px; text-align:center;'>
-            <h3 style='color:#0F172A;'>Inspector Portal</h3>
-            <p style='color:#64748B; font-size:0.9em;'>Enterprise Edition v6.1</p>
+        <div style='background:white; padding:40px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.05); margin-top:20px; text-align:center; border: 1px solid #E2E8F0;'>
+            <h3 style='color:#0F172A; border-left: none; padding-left: 0;'>Inspector Portal</h3>
+            <p style='color:#64748B; font-size:0.9em; margin-bottom: 20px;'>Enterprise Edition v6.1 | Use 'admin' / 'inspect'</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -659,7 +699,6 @@ def login_page():
             if st.form_submit_button("Secure Login"):
                 user = check_login(u, p)
                 if user:
-                    # User logged in successfully
                     st.session_state.update({
                         'logged_in': True, 
                         'role': user[0], 
@@ -672,81 +711,78 @@ def login_page():
                 else: st.error("Access Denied")
 
 def inspection_page(ai: AIEngine):
-    section_header("New Inspection", "clipboard")
+    section_header("New Inspection: Data Capture", "clipboard")
     
     # --- Property Details and History Lookup ---
     with st.container():
         st.subheader("📍 Site Inspection Details") # Australian Terminology
-        c1, c2, c3 = st.columns([2, 1, 1])
+        
+        c1, c2 = st.columns(2)
         st.session_state['addr'] = c1.text_input("Address", st.session_state.get('addr', ''))
         st.session_state['client'] = c2.text_input("Client", st.session_state.get('client', ''))
         
-        lookup_button = c3.button("Lookup Details (AI)")
+        st.session_state['year_built'] = st.number_input("Year Built (Manual/AI)", 1900, 2025, st.session_state.get('year_built', 2000))
+        st.info(f"Property Type (AI Lookup): **{st.session_state.get('property_type', 'N/A')}**")
         
-        year = st.session_state.get('year_built', 2000)
-        p_type = st.session_state.get('property_type', 'N/A')
         
-        if lookup_button and st.session_state['addr']:
-            with st.spinner(f"Searching history for {st.session_state['addr']}..."):
-                fetched_year, fetched_type = ai.get_property_history(st.session_state['addr'])
-                if fetched_year:
-                    st.session_state['year_built'] = fetched_year
-                    st.session_state['property_type'] = fetched_type
-                    st.success(f"History Found! Year Built: {fetched_year}, Type: {fetched_type}")
-                elif fetched_type != 'N/A':
-                    st.session_state['property_type'] = fetched_type
-                    st.warning("Could not automatically retrieve year built, please enter manually.")
-                else:
-                    st.warning(f"Could not retrieve details. Status: {fetched_type}")
-
-        st.session_state['year_built'] = c3.number_input("Year Built", 1900, 2025, st.session_state.get('year_built', 2000))
-        st.info(f"Property Type: **{st.session_state.get('property_type', 'N/A')}**")
+        if st.button("Lookup Property History (AI)", use_container_width=True):
+            if st.session_state['addr']:
+                with st.spinner(f"Searching Australian property records for {st.session_state['addr']}..."):
+                    fetched_year, fetched_type = ai.get_property_history(st.session_state['addr'])
+                    if fetched_year or fetched_type != 'N/A':
+                        if fetched_year: st.session_state['year_built'] = fetched_year
+                        if fetched_type != 'N/A': st.session_state['property_type'] = fetched_type
+                        st.success(f"History Found! Year Built: {st.session_state['year_built']}, Type: {st.session_state['property_type']}")
+                    else:
+                        st.warning("Could not retrieve reliable details. Please verify the address or enter manually.")
+            else:
+                st.warning("Please enter an Address first.")
         
-        if st.session_state['year_built'] and st.button("Generate 5-Year Maintenance Plan (AI)"):
+        if st.session_state['year_built'] and st.button("Generate 5-Year Maintenance Plan (AI)", key="gen_maint_plan", use_container_width=True):
             with st.spinner("Building 5-Year Plan..."):
                 plan = ai.generate_maintenance(st.session_state['year_built'], st.session_state['defects'])
                 st.session_state['maint_plan'] = plan
-                st.info("Maintenance Plan Generated (See Dashboard)")
+                st.success("Maintenance Plan Generated (View on Dashboard)")
 
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # --- AI Compliance Checker Section ---
-    section_header("AI Compliance Check", "search")
-    with st.container():
-        st.subheader("NCC/AS Standard Lookup")
-        query = st.text_input("Enter a building query for compliance search (e.g., 'Minimum balcony balustrade height in NCC 2022')")
-        if st.button("Search Standards"):
-            if query:
-                with st.spinner("Searching and citing standards..."):
-                    result = ai.check_compliance(query)
-                    st.session_state['compliance_result'] = result
-            else:
-                st.warning("Please enter a query.")
-                
-        if st.session_state.get('compliance_result'):
-            st.markdown("---")
-            st.subheader("Compliance Report")
-            st.info(st.session_state['compliance_result'])
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    col_main, col_sidebar = st.columns([1.6, 1])
+    # --- Main Inspection Columns (Stackable on Mobile) ---
+    col_main, col_sidebar = st.columns([2, 1])
     
     with col_main:
-        section_header("Defect Entry", "camera")
+        section_header("Defect & Compliance Entry", "camera")
+        
+        # --- AI Compliance Checker Section ---
+        with st.expander("🔍 AI Compliance Checker (NCC/AS Lookup)", expanded=False):
+            query = st.text_input("Enter a query for compliance search (e.g., 'Minimum balcony balustrade height in NCC 2022')")
+            if st.button("Search Standards", key="compliance_search"):
+                if query:
+                    with st.spinner("Searching and citing standards..."):
+                        result = ai.check_compliance(query)
+                        st.session_state['compliance_result'] = result
+                else:
+                    st.warning("Please enter a query.")
+                    
+            if st.session_state.get('compliance_result'):
+                st.markdown("#### Compliance Report")
+                st.info(st.session_state['compliance_result'])
+
+        st.markdown("<hr>", unsafe_allow_html=True)
+
         with st.container():
             area = st.selectbox("Area Inspected", AREAS)
             
             st.markdown("##### 📸 Evidence")
-            img_file = st.file_uploader("Upload Photo", type=['jpg', 'png'])
+            c_img, c_analyze = st.columns([1, 2])
+            img_file = c_img.file_uploader("Upload Photo", type=['jpg', 'png'], label_visibility="collapsed")
             
             b64_str = None
             if img_file:
                 b = img_file.getvalue()
                 b64_str = base64.b64encode(b).decode()
-                st.markdown(f'<img src="data:image/png;base64,{b64_str}" class="hover-zoom" width="150">', unsafe_allow_html=True)
+                c_img.markdown(f'<img src="data:image/png;base64,{b64_str}" class="hover-zoom">', unsafe_allow_html=True)
                 
-                if st.button("Analyze Compliance (AI)", key="analyze_defect"):
+                if c_analyze.button("Analyze & Pre-fill Details (AI)", key="analyze_defect", use_container_width=True):
                     with st.spinner("Checking AS 4349.1..."):
                         ai_data = ai.analyze_photo(Image.open(img_file))
                         st.session_state['temp_ai'] = ai_data
@@ -758,35 +794,40 @@ def inspection_page(ai: AIEngine):
                 if "Defect:" in raw: d_d = raw.split("Defect:", 1)[1].split("\n")[0].strip()
                 if "Observation:" in raw: d_o = raw.split("Observation:", 1)[1].split("\n")[0].strip()
                 if "Recommendation:" in raw: d_r = raw.split("Recommendation:", 1)[1].split("\n")[0].strip()
-                # Simple severity guess for pre-fill
                 if "Safety" in raw: sev_default = 2
                 elif "Major" in raw: sev_default = 1
-
-
+                
             with st.form("defect"):
                 name = st.text_input("Defect Title", value=d_d)
-                obs = st.text_area("Observation", value=d_o, height=100)
-                rec = st.text_area("Recommendation", value=d_r, height=100)
+                
+                c_ob, c_re = st.columns(2)
+                obs = c_ob.text_area("Observation", value=d_o, height=100)
+                rec = c_re.text_area("Recommendation", value=d_r, height=100)
+                
                 sev = st.selectbox("Severity", SEVERITY_LEVELS, index=sev_default)
                 
-                c_a, c_b, c_c, c_d = st.columns(4)
-                want_scope = c_a.checkbox("Generate Scope of Works")
-                want_impact = c_b.checkbox("Add Impact Analysis")
-                want_trade = c_c.checkbox("Suggest Trade")
-                want_liability = c_d.checkbox("Add Legal Liability Statement")
-                
-                if st.form_submit_button("Save Defect"):
+                st.markdown("##### AI Context Generation")
+                c_ai_1, c_ai_2, c_ai_3, c_ai_4 = st.columns(4)
+                want_scope = c_ai_1.checkbox("Scope of Works")
+                want_impact = c_ai_2.checkbox("Impact Analysis")
+                want_trade = c_ai_3.checkbox("Suggest Trade")
+                want_liability = c_ai_4.checkbox("Legal Liability Statement") # UAT requested feature
+
+                if st.form_submit_button("Save Defect & Run AI Analysis"):
                     scope_txt, impact_txt, trade_txt, liability_txt = "", "", "", ""
                     
-                    # Estimate cost automatically
+                    if not name or not obs or not rec:
+                        st.error("Please fill in Defect Title, Observation, and Recommendation.")
+                        st.stop()
+                        
+                    # Estimate cost automatically (MANDATORY)
                     cost_est_val = "N/A"
-                    if name and sev:
-                        with st.spinner("Estimating Cost (AI)..."):
-                            try: cost_est_val = ai.estimate_cost(name, sev)
-                            except Exception: pass
+                    with st.spinner("1. Estimating Cost (AI)..."):
+                        try: cost_est_val = ai.estimate_cost(name, sev)
+                        except Exception: pass
                             
-                    # Run other AI tasks
-                    with st.spinner("Generating AI analysis..."):
+                    # Run other requested AI tasks
+                    with st.spinner("2. Generating supplementary AI analysis..."):
                         if want_scope: scope_txt = ai.generate_scope(name, rec)
                         if want_impact: impact_txt = ai.explain_impact(name)
                         if want_trade: trade_txt = ai.suggest_trade(name)
@@ -825,30 +866,28 @@ def inspection_page(ai: AIEngine):
             st.info("No defects logged.")
             
 def manage_reports_page():
-    section_header("Load & Manage Reports", "archive")
+    section_header("Load & Manage Reports (Version Control)", "archive")
     
-    st.info("This section allows you to load, delete, or version reports saved by the team.")
+    st.info("View, load, or delete saved report versions. Only admins can see all reports; inspectors see their own.")
     
-    reports = get_all_reports()
+    reports = get_all_reports(inspector=st.session_state.get('fullname'))
     
     if not reports:
-        st.warning("No saved reports found in the database.")
+        st.warning("No saved reports found in the database for this user.")
         return
 
-    # Prepare data for display and loading
     df_reports = pd.DataFrame(reports, columns=['ID', 'Title', 'Address', 'Inspector', 'Saved At'])
     
-    # Use data editor for interactive display/deletion
-    st.subheader("Report Versions")
+    st.subheader("Saved Report Versions")
     st.dataframe(df_reports, use_container_width=True, hide_index=True)
 
-    col1, col2, col3 = st.columns([1, 1, 2])
+    col1, col2 = st.columns(2)
     
     # Load Functionality
     report_ids = df_reports['ID'].tolist()
     load_id = col1.selectbox("Select Report ID to Load", report_ids)
     
-    if col1.button("Load Report"):
+    if col1.button("Load Report", use_container_width=True):
         if load_id:
             data = load_report_data(load_id)
             if data:
@@ -864,7 +903,7 @@ def manage_reports_page():
 
     # Delete Functionality
     delete_id = col2.selectbox("Select Report ID to Delete", report_ids)
-    if col2.button("Delete Report"):
+    if col2.button("Delete Report", use_container_width=True):
         if delete_id:
             if delete_report(delete_id):
                 st.success(f"Report ID {delete_id} deleted permanently.")
@@ -876,7 +915,7 @@ def report_page(ai: AIEngine):
     section_header("Finalize Report: Review & Export", "file-text")
     
     if not st.session_state['defects']:
-        st.warning("No defects logged. Please start a new inspection.")
+        st.warning("No defects logged. Please start a new inspection or load a draft from 'Manage Reports'.")
         return
         
     # Branding Options
@@ -890,7 +929,8 @@ def report_page(ai: AIEngine):
         else:
             c3.info("No Maintenance Plan Generated.")
 
-    st.subheader("Final Defect Register Review")
+    st.subheader("Final Defect Register Review & Costing")
+    st.info("You can make final manual edits (e.g., adjust cost or wording) directly in the table below.")
     
     # Convert defects list to DataFrame for the data editor
     df = pd.DataFrame(st.session_state['defects'])
@@ -905,6 +945,7 @@ def report_page(ai: AIEngine):
             "cost": st.column_config.TextColumn("Est Cost ($)", help="Enter range e.g. $500 - $1,000")
         },
         hide_index=True,
+        # Ensure all columns are included for completeness
         column_order=["area", "defect_name", "severity", "observation", "recommendation", "trade", "cost", "scope", "impact", "liability", "image_data"]
     )
     st.session_state['defects'] = edited_df.to_dict('records')
@@ -917,24 +958,26 @@ def report_page(ai: AIEngine):
     <div class="financial-box">
         <h3>💰 Total Estimated Rectification Costs</h3>
         <div class="financial-total">{total_str}</div>
-        <p><i>This figure includes all line items above and is editable via the table.</i></p>
+        <p><i>Based on the current register. Costs are indicative only.</i></p>
     </div>
     """, unsafe_allow_html=True)
     
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    # Executive Summary Generation
-    if st.button("Generate Exec Summary (AI)"):
+    st.subheader("Executive Summary")
+    
+    c_sum, c_gen = st.columns([3, 1])
+    if c_gen.button("Generate Summary (AI)", use_container_width=True):
         st.session_state['summary'] = ai.generate_exec_summary(st.session_state['defects'], total_str)
         
-    summ = st.text_area("Executive Summary (Final Edit)", st.session_state.get('summary', ''), height=200)
+    summ = c_sum.text_area("Executive Summary (Final Edit)", st.session_state.get('summary', ''), height=200, label_visibility="collapsed")
 
-    st.markdown("### Report Management")
+    st.markdown("### Report Management & Export")
     c_save, c_pdf, c_docx = st.columns(3)
     
     # --- SAVE / VERSION CONTROL ---
     report_title = c_save.text_input("Report Title for Saving", value=f"Report for {st.session_state.get('addr', 'New Property')}")
-    if c_save.button("Save Current Draft (Version Control)"):
+    if c_save.button("Save Current Draft (New Version)", use_container_width=True):
         if report_title and st.session_state.get('addr'):
             # Data to save (only critical data needed for a report)
             data_to_save = {
@@ -951,7 +994,7 @@ def report_page(ai: AIEngine):
         else:
             st.error("Please enter an Address and Report Title before saving.")
         
-    # --- EXPORT ---
+    # --- EXPORT PREPARATION ---
     property_data = {
         "address": st.session_state.get('addr', ''), 
         "client": st.session_state.get('client', ''),
@@ -980,7 +1023,8 @@ def report_page(ai: AIEngine):
         "Download PDF Report", 
         pdf_dat, 
         f"Inspection_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf", 
-        "application/pdf"
+        "application/pdf",
+        use_container_width=True
     )
         
     # DOCX Export
@@ -996,7 +1040,8 @@ def report_page(ai: AIEngine):
         "Download Word (DOCX)", 
         docx_dat, 
         f"Inspection_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.docx", 
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        use_container_width=True
     )
 
 def admin_page():
@@ -1010,11 +1055,12 @@ def admin_page():
     
     with st.expander("➕ Add New User", expanded=False):
         with st.form("add_user"):
-            u = st.text_input("Username (Login ID)")
-            p = st.text_input("Password", type="password")
-            fn = st.text_input("Full Name")
-            r = st.selectbox("Role", ["inspector", "admin"])
-            if st.form_submit_button("Create User"):
+            c1, c2 = st.columns(2)
+            u = c1.text_input("Username (Login ID)")
+            fn = c2.text_input("Full Name")
+            p = c1.text_input("Password", type="password")
+            r = c2.selectbox("Role", ["inspector", "admin"])
+            if st.form_submit_button("Create User", use_container_width=True):
                 if u and p and fn:
                     if add_new_user(u, p, r, fn):
                         st.success(f"User '{u}' created successfully with role '{r}'.")
@@ -1035,7 +1081,7 @@ def admin_page():
             del_options = [user[0] for user in users if user[0] != 'admin']
             user_to_delete = st.selectbox("Select User to Delete", del_options)
             
-            if st.form_submit_button("Delete Selected User"):
+            if st.form_submit_button("Delete Selected User", use_container_width=True):
                 if user_to_delete:
                     if delete_user(user_to_delete):
                         st.success(f"User '{user_to_delete}' deleted.")
@@ -1049,7 +1095,7 @@ def admin_page():
 
 def section_header(text, icon):
     st.markdown(f"""
-    <div style="display: flex; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #E2E8F0; padding-bottom: 10px;">
+    <div style="margin-bottom: 20px; border-bottom: 2px solid #E2E8F0; padding-bottom: 10px;">
         <h2 style="margin: 0; color: #0F172A;">{text}</h2>
     </div>
     """, unsafe_allow_html=True)
@@ -1064,7 +1110,7 @@ def main():
     if 'defects' not in st.session_state: st.session_state['defects'] = []
     if 'page' not in st.session_state: st.session_state['page'] = 'New Inspection'
     if 'year_built' not in st.session_state: st.session_state['year_built'] = 2000
-    if 'property_type' not in st.session_state: st.session_state['property_type'] = 'House'
+    if 'property_type' not in st.session_state: st.session_state['property_type'] = 'N/A'
     if 'summary' not in st.session_state: st.session_state['summary'] = ''
     
     # Initialize AI Engine (needs API key from settings)
@@ -1079,17 +1125,21 @@ def main():
             st.markdown(f"**Inspector:** {st.session_state.get('fullname')}", unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
-            menu = ["New Inspection", "Manage Reports", "Dashboard", "Finalize Report", "Admin"]
+            menu = ["New Inspection", "Manage Reports", "Dashboard", "Finalize Report"]
+            if st.session_state['role'] == 'admin':
+                menu.append("Admin")
+                
             pg = st.radio("Navigate", menu, index=menu.index(st.session_state['page']) if st.session_state['page'] in menu else 0)
             st.session_state['page'] = pg
             
-            with st.expander("⚙️ Settings"):
-                st.session_state['api_key'] = st.text_input("AI Key", type="password", value=st.session_state.get('api_key', ''))
+            with st.expander("⚙️ Report Settings", expanded=False):
+                st.session_state['api_key'] = st.text_input("Gemini API Key", type="password", value=st.session_state.get('api_key', ''))
                 st.session_state['co_name'] = st.text_input("Company Name", value=st.session_state.get('co_name', 'SiteVision Pty Ltd'))
                 st.session_state['lic'] = st.text_input("Inspector Licence", value=st.session_state.get('lic', 'AU-4349'))
                 st.session_state['logo_file'] = st.file_uploader("Company Logo", type=['png', 'jpg'])
                 
-            if st.button("Logout"):
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("Logout", use_container_width=True):
                 st.session_state.clear()
                 st.rerun()
 
@@ -1099,7 +1149,7 @@ def main():
         elif pg == "Manage Reports":
             manage_reports_page()
         elif pg == "Dashboard": 
-            section_header("Dashboard", "")
+            section_header("Inspection Dashboard", "dashboard")
             t_min, t_max = calculate_total_repairs(st.session_state['defects'])
             total_str = f"${t_min:,} - ${t_max:,}"
 
@@ -1110,7 +1160,7 @@ def main():
             
             if st.session_state.get('maint_plan'):
                 st.markdown("---")
-                st.subheader("5-Year Maintenance Plan")
+                st.subheader("5-Year Maintenance Plan (AI)")
                 st.markdown(st.session_state['maint_plan'])
 
         elif pg == "Finalize Report": 
