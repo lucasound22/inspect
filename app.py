@@ -12,6 +12,10 @@ import time
 import requests
 import json
 import base64
+import re
+from docx import Document
+from docx.shared import Inches, Pt, Cm, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 # --- CONFIGURATION & SETUP ---
 st.set_page_config(
@@ -33,10 +37,11 @@ def apply_custom_css():
         }
         
         :root {
-            --primary: #0F172A; /* Slate 900 - Brand Dark */
-            --accent: #3B82F6;  /* Blue 500 - Brand Accent */
-            --bg: #F8FAFC;      /* Slate 50 - Background */
-            --border: #E2E8F0;  /* Slate 200 */
+            --primary: #0F172A; /* Slate 900 */
+            --accent: #3B82F6;  /* Electric Blue */
+            --secondary: #64748B; /* Slate 500 */
+            --bg: #F1F5F9;      /* Slate 100 */
+            --card-bg: #FFFFFF;
         }
 
         .stApp {
@@ -46,26 +51,33 @@ def apply_custom_css():
         /* Sidebar Styling */
         [data-testid="stSidebar"] {
             background-color: #FFFFFF;
-            border-right: 1px solid var(--border);
+            border-right: 1px solid #E2E8F0;
         }
         
-        /* Card / Container Styling */
+        /* Professional Card Styling */
         div.stContainer, div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] > div[data-testid="stVerticalBlock"] {
-            background-color: white;
+            background-color: var(--card-bg);
             padding: 24px;
             border-radius: 12px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-            border: 1px solid var(--border);
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid #E2E8F0;
+            margin-bottom: 1rem;
         }
         
-        /* Typography */
+        /* Headers */
         h1, h2, h3 {
             color: var(--primary);
             font-weight: 700;
             letter-spacing: -0.02em;
         }
         
-        /* Buttons */
+        /* Accent Headers */
+        h3 {
+            border-left: 4px solid var(--accent);
+            padding-left: 12px;
+        }
+        
+        /* Primary Buttons */
         .stButton button {
             background-color: var(--accent);
             color: white;
@@ -74,21 +86,36 @@ def apply_custom_css():
             border: none;
             height: 44px;
             transition: all 0.2s ease;
+            width: 100%;
         }
         .stButton button:hover {
             background-color: #2563EB;
-            transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+            transform: translateY(-1px);
         }
 
-        /* Input Fields */
-        .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea, .stNumberInput input {
-            border-radius: 6px;
-            border: 1px solid #CBD5E1;
-            padding-left: 10px;
+        /* Metrics Styling */
+        [data-testid="stMetricValue"] {
+            color: var(--accent);
+            font-weight: 700;
         }
         
-        /* Hover Zoom Effect for Images */
+        /* Form Inputs */
+        .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {
+            border-radius: 6px;
+            border: 1px solid #CBD5E1;
+        }
+        
+        /* Custom Defect Card */
+        .defect-card {
+            background: #F8FAFC;
+            border-left: 4px solid #F59E0B;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        
         .hover-zoom {
             transition: transform 0.3s ease;
             border-radius: 8px;
@@ -101,41 +128,38 @@ def apply_custom_css():
             box-shadow: 0 10px 25px rgba(0,0,0,0.2);
         }
         
-        /* Custom Header Icons */
-        .header-icon {
-            vertical-align: middle;
-            margin-right: 10px;
-            width: 28px;
-            height: 28px;
+        /* Financial Summary Box (for Final Report Page) */
+        .financial-box {
+            background-color: #EFF6FF;
+            border: 1px solid #BFDBFE;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .financial-total {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #1E40AF;
         }
     </style>
     """, unsafe_allow_html=True)
 
 def get_logo_svg():
-    # Cleaned SVG without comments to prevent rendering errors
     return """
     <svg width="100%" height="60" viewBox="0 0 250 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="10" y="10" width="40" height="40" rx="12" fill="#0F172A"/>
-        <path d="M30 20C35.5228 20 40 24.4772 40 30C40 35.5228 35.5228 40 30 40C24.4772 40 20 35.5228 20 30C20 24.4772 24.4772 20 30 20Z" stroke="#3B82F6" stroke-width="3"/>
-        <circle cx="30" cy="30" r="4" fill="#3B82F6"/>
-        <text x="65" y="38" fill="#0F172A" font-family="Inter, sans-serif" font-weight="bold" font-size="24" letter-spacing="-1">SiteVision <tspan fill="#3B82F6">AI</tspan></text>
+        <rect x="10" y="10" width="40" height="40" rx="8" fill="#0F172A"/>
+        <path d="M30 20L40 40H20L30 20Z" fill="#3B82F6"/>
+        <circle cx="30" cy="32" r="3" fill="white"/>
+        <text x="65" y="38" fill="#0F172A" font-family="Inter, sans-serif" font-weight="bold" font-size="24" letter-spacing="-0.5">SiteVision <tspan fill="#3B82F6">AI</tspan></text>
     </svg>
     """
 
-# Helper to render styled headers
-def section_header(text, icon_path):
-    # Using simple SVG paths for section icons to ensure consistency
-    st.markdown(f"""
-    <div style="display: flex; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #F1F5F9; padding-bottom: 10px;">
-        <h3 style="margin: 0; color: #0F172A;">{text}</h3>
-    </div>
-    """, unsafe_allow_html=True)
-
-# --- CONSTANTS ---
+# --- CONSTANTS & DATA ---
 SEVERITY_LEVELS = [
-    "Minor Defect (Maintenance - AS 4349.1)",
-    "Major Defect (Structural/Significant - AS 4349.1)",
-    "Safety Hazard (NCC Vol 2 Compliance)",
+    "Minor Defect (Maintenance)",
+    "Major Defect (Structural/Significant)",
+    "Safety Hazard (Immediate Action)",
     "Further Investigation Required"
 ]
 
@@ -144,17 +168,42 @@ AREAS = [
     "Roof Space", "Interior", "Garage/Carport", "Wet Areas", "Outbuildings"
 ]
 
-# --- DATABASE MANAGEMENT ---
+# --- HELPER FUNCTIONS ---
+def parse_cost(cost_str):
+    """Extracts low and high values from strings like '$500 - $1,200'"""
+    if not cost_str or cost_str == "N/A":
+        return 0, 0
+    # Find all numbers (removing commas and non-digits)
+    nums = re.findall(r'\d+', cost_str.replace(',', ''))
+    if not nums:
+        return 0, 0
+    nums = [int(n) for n in nums]
+    if len(nums) == 1:
+        return nums[0], nums[0]
+    return min(nums), max(nums)
+
+def calculate_total_repairs(defects):
+    total_min = 0
+    total_max = 0
+    for d in defects:
+        # Use the cost value from the dictionary (which might have been edited in the data editor)
+        c_min, c_max = parse_cost(d.get('cost', 'N/A'))
+        total_min += c_min
+        total_max += c_max
+    return total_min, total_max
+
+# --- DATABASE (Mock SQLite for Auth) ---
 def init_db():
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users 
-                 (username TEXT PRIMARY KEY, password TEXT, role TEXT, full_name TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, role TEXT, full_name TEXT)''')
+    # Default password 'inspect' hashed
     secure_pass = hashlib.sha256(b"inspect").hexdigest()
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
         c.execute("INSERT INTO users VALUES ('admin', ?, 'admin', 'System Administrator')", (secure_pass,))
     else:
+        # Ensure default pass is always set for easy testing
         c.execute("UPDATE users SET password = ? WHERE username = 'admin'", (secure_pass,))
     conn.commit()
     conn.close()
@@ -168,33 +217,6 @@ def check_login(username, password):
     conn.close()
     return user
 
-def create_user(username, password, role, full_name):
-    try:
-        conn = sqlite3.connect('users.db')
-        c = conn.cursor()
-        hashed = hashlib.sha256(password.encode()).hexdigest()
-        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", (username, hashed, role, full_name))
-        conn.commit()
-        conn.close()
-        return True, "User created successfully."
-    except sqlite3.IntegrityError:
-        return False, "Username already exists."
-
-def remove_user(username):
-    if username == 'admin': return False, "Cannot delete Root Admin."
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    c.execute("DELETE FROM users WHERE username = ?", (username,))
-    conn.commit()
-    conn.close()
-    return True, "User deleted."
-
-def get_all_users():
-    conn = sqlite3.connect('users.db')
-    df = pd.read_sql_query("SELECT username, role, full_name FROM users", conn)
-    conn.close()
-    return df
-
 # --- AI ENGINE ---
 class AIEngine:
     def __init__(self, api_key):
@@ -207,540 +229,556 @@ class AIEngine:
     def analyze_photo(self, image):
         if not self.model: return None
         prompt = """
-        Act as a Licensed Australian Building Inspector. Analyze this defect image.
-        Reference specific clauses from AS 4349.1 and NCC 2022 where possible.
-        Format output exactly as:
+        Act as an Australian Building Inspector. Analyze this image.
+        Reference AS 4349.1.
+        Format:
         Defect: [Name]
-        Observation: [Technical description]
-        Standard: [Standard Ref]
+        Observation: [Technical Description]
         Severity: [Minor/Major/Safety]
-        Recommendation: [Rectification advice]
+        Recommendation: [Action]
         """
-        try:
-            return self.model.generate_content([prompt, image]).text
-        except: return "AI Error: Analysis failed."
+        try: return self.model.generate_content([prompt, image]).text
+        except: return "AI Error"
+
+    def generate_scope(self, defect, rec):
+        if not self.model: return "N/A"
+        prompt = f"Write a detailed Scope of Works for a tradesperson to rectify '{defect}'. Recommendation was: '{rec}'. Use Australian trade terminology."
+        try: return self.model.generate_content(prompt).text
+        except: return "N/A"
+
+    def explain_impact(self, defect):
+        if not self.model: return "N/A"
+        prompt = f"Explain the consequences to the property owner if '{defect}' is not fixed. Focus on structural integrity and cost escalation."
+        try: return self.model.generate_content(prompt).text
+        except: return "N/A"
+
+    def check_compliance(self, query):
+        if not self.model: return "N/A"
+        prompt = f"Search NCC 2022 Vol 2 and AS standards for: '{query}'. Cite the specific clause if possible."
+        try: return self.model.generate_content(prompt).text
+        except: return "N/A"
+
+    def suggest_trade(self, defect):
+        if not self.model: return "Builder"
+        prompt = f"Which specific Australian licensed trade is best suited to fix '{defect}'? (e.g. Roof Plumber, Electrician, Structural Engineer)."
+        try: return self.model.generate_content(prompt).text.strip()
+        except: return "General Builder"
+
+    def generate_maintenance(self, age, defects):
+        if not self.model: return "N/A"
+        d_list = ", ".join([d['defect_name'] for d in defects])
+        prompt = f"Create a 5-year maintenance schedule for a house built in {age} with these current defects: {d_list}. Format as a list."
+        try: return self.model.generate_content(prompt).text
+        except: return "N/A"
 
     def magic_rewrite(self, text):
         if not self.model: return text
-        prompt = f"Rewrite these inspection notes into formal Australian Standards compliant report language: '{text}'"
-        try:
-            return self.model.generate_content(prompt).text.strip()
-        except: return text
+        return self.model.generate_content(f"Rewrite as formal building report text (AS 4349.1): {text}").text.strip()
 
     def estimate_cost(self, defect, severity):
         if not self.model: return "N/A"
-        prompt = f"Provide a repair cost range in AUD for '{defect}' ({severity}) in Australia. Return ONLY range string (e.g. '$500 - $1,000')."
-        try:
-            return self.model.generate_content(prompt).text.strip()
+        # Uses specific prompt to force a parsable output range
+        prompt = f"Provide a repair cost range in AUD for '{defect}' ({severity}) in Australia. Return ONLY the range string (e.g. '$500 - $1,000'). Do not add any other text."
+        try: return self.model.generate_content(prompt).text.strip()
         except: return "N/A"
 
-    def suggest_hazards(self, year):
-        if not self.model: return "N/A"
-        prompt = f"List 3 likely building hazards for a house built in {year} in Australia (e.g. Asbestos, Wiring). Brief list."
-        try:
-            return self.model.generate_content(prompt).text
-        except: return "N/A"
-        
-    def generate_swms_content(self, weather, year):
-        if not self.model: return None
-        prompt = f"""
-        Generate a Safe Work Method Statement (SWMS) Table for inspecting a property built in {year} during {weather} conditions.
-        Return strictly a JSON list of objects with keys: "activity", "hazard", "risk_level", "control".
-        Example: [{{"activity": "Roof Access", "hazard": "Falls", "risk_level": "High", "control": "Use harness"}}]
-        Make it specific to Australian OH&S.
-        """
-        try:
-            txt = self.model.generate_content(prompt).text
-            # Clean markdown
-            txt = txt.replace('```json', '').replace('```', '')
-            return json.loads(txt)
-        except: return []
-
-    def generate_exec_summary(self, defects):
+    def generate_exec_summary(self, defects, total_cost):
         if not self.model: return ""
         d_list = ", ".join([f"{d['defect_name']} ({d['severity']})" for d in defects])
-        prompt = f"Write a professional Executive Summary for a building report with these defects: {d_list}. Focus on safety and structural integrity."
-        try:
-            return self.model.generate_content(prompt).text
+        prompt = f"Write an Executive Summary for a building report. Defects: {d_list}. Total Estimated Rectification Cost: {total_cost}. Focus on major risks and required immediate action."
+        try: return self.model.generate_content(prompt).text
         except: return ""
 
-# --- PDF ENGINES ---
+# --- EXPORT ENGINES (PDF/DOCX) ---
 class ReportPDF(FPDF):
-    def __init__(self, company, license, logo_path):
+    def __init__(self, company, license, logo_path, header_img, footer_img):
         super().__init__()
         self.company = company
         self.license = license
         self.logo_path = logo_path
+        self.header_img = header_img
+        self.footer_img = footer_img
 
     def header(self):
-        if self.logo_path:
+        if self.header_img:
+            try: self.image(self.header_img, 0, 0, 210)
+            except: pass
+        
+        if self.logo_path and not self.header_img:
             try: self.image(self.logo_path, 10, 8, 35)
             except: pass
-        self.set_font('Arial', 'B', 16)
-        self.cell(45)
-        self.cell(0, 10, f"{self.company} - Inspection Report", 0, 1, 'L')
-        self.set_font('Arial', '', 10)
-        self.cell(0, 10, f"Licence: {self.license} | Compliant with AS 4349.1", 0, 1, 'R')
-        self.ln(15)
-        self.line(10, 30, 200, 30)
+            
+        self.ln(25)
+        if not self.header_img:
+            self.set_font('Arial', 'B', 16)
+            self.cell(0, 10, f"{self.company} - Inspection Report", 0, 1, 'R')
+            self.line(10, 35, 200, 35)
         self.ln(10)
 
     def footer(self):
+        if self.footer_img:
+            try: self.image(self.footer_img, 0, 270, 210)
+            except: pass
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, f"Powered by SiteVision AI | Page {self.page_no()}", 0, 0, 'C')
+        self.cell(0, 10, f"Page {self.page_no()}", 0, 0, 'C')
 
-class SWMSPDF(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 16)
-        self.cell(0, 10, "Safe Work Method Statement (SWMS)", 0, 1, 'C')
-        self.ln(10)
+def generate_pdf(data, prop, inspector, co_details, summary, total_est_str):
+    logo = io.BytesIO(co_details['logo'].getvalue()) if co_details['logo'] else None
+    hed = io.BytesIO(co_details['header'].getvalue()) if co_details['header'] else None
+    foot = io.BytesIO(co_details['footer'].getvalue()) if co_details['footer'] else None
 
-def generate_pdf_report(data, prop, inspector, co_details, summary):
-    pdf = ReportPDF(co_details['name'], co_details['lic'], co_details['logo'])
+    pdf = ReportPDF(co_details['name'], co_details['lic'], logo, hed, foot)
     pdf.add_page()
     
-    # Property Info
     pdf.set_font('Arial', 'B', 14)
     pdf.cell(0, 10, "Property Overview", 0, 1)
     pdf.set_font('Arial', '', 11)
     pdf.cell(40, 7, "Address:", 0); pdf.cell(0, 7, prop['address'], 0, 1)
     pdf.cell(40, 7, "Client:", 0); pdf.cell(0, 7, prop['client'], 0, 1)
-    pdf.cell(40, 7, "Inspector:", 0); pdf.cell(0, 7, inspector, 0, 1)
     pdf.ln(5)
     
     # Executive Summary
-    pdf.set_fill_color(245, 247, 250)
+    pdf.set_fill_color(240, 245, 255)
     pdf.set_font('Arial', 'B', 12)
     pdf.cell(0, 10, "  Executive Summary", 0, 1, 'L', 1)
     pdf.set_font('Arial', '', 10)
     pdf.multi_cell(0, 6, summary)
+    pdf.ln(5)
+
+    # Financial Summary (The Calculator Result)
+    pdf.set_fill_color(255, 247, 237) # Light Orange
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 10, "  Financial Estimate", 0, 1, 'L', 1)
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(0, 10, f"Total Estimated Rectification Costs: {total_est_str}", 0, 1)
+    pdf.set_font('Arial', 'I', 9)
+    pdf.multi_cell(0, 5, "Note: These costs are rough estimates generated by AI based on average Australian trade rates and edited by the inspector. Actual quotes from licensed trades should be sought.")
     pdf.ln(8)
     
-    # Findings
-    pdf.set_font('Arial', 'B', 12)
-    pdf.cell(0, 10, "  Defect Register", 0, 1, 'L', 1)
-    
+    # Detailed Defects
     for item in data:
         pdf.set_font('Arial', 'B', 11)
-        if "Safety" in item['severity']: pdf.set_text_color(220, 38, 38)
-        elif "Major" in item['severity']: pdf.set_text_color(234, 88, 12)
-        else: pdf.set_text_color(0, 82, 204)
+        if "Safety" in item['severity']: pdf.set_text_color(200, 0, 0)
+        elif "Major" in item['severity']: pdf.set_text_color(200, 100, 0)
+        else: pdf.set_text_color(0, 50, 150)
         
         pdf.cell(0, 8, f"{item['area']} | {item['defect_name']}", 0, 1)
         pdf.set_text_color(0)
         
         pdf.set_font('Arial', '', 10)
-        pdf.multi_cell(0, 5, f"Obs: {item['observation']}")
+        pdf.multi_cell(0, 5, f"Observation: {item['observation']}")
         pdf.multi_cell(0, 5, f"Rectification: {item['recommendation']}")
         
-        pdf.set_font('Arial', 'I', 9)
-        pdf.cell(0, 6, f"Est. Cost: {item.get('cost', 'N/A')} | {item['severity']}", 0, 1)
+        # Cost Line
+        pdf.set_font('Arial', 'B', 9)
+        pdf.cell(30, 6, "Est. Repair Cost:", 0)
+        pdf.set_font('Arial', '', 9)
+        pdf.cell(0, 6, f"{item.get('cost', 'N/A')}", 0, 1)
         
-        pdf.set_draw_color(220, 220, 220)
+        if 'scope' in item and item['scope']:
+            pdf.set_font('Arial', 'I', 9)
+            pdf.multi_cell(0, 5, f"Scope: {item['scope']}")
+            
+        pdf.ln(4)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
         pdf.ln(4)
         
     return pdf.output(dest='S').encode('latin-1')
 
-def generate_pdf_swms(risks, prop_addr, inspector):
-    pdf = SWMSPDF()
-    pdf.add_page()
-    pdf.set_font('Arial', '', 10)
+def generate_docx(data, prop, inspector, co_details, summary, total_est_str):
+    doc = Document()
     
-    pdf.cell(0, 8, f"Site: {prop_addr}", 0, 1)
-    pdf.cell(0, 8, f"Inspector: {inspector}", 0, 1)
-    pdf.cell(0, 8, f"Date: {datetime.now().strftime('%d/%m/%Y')}", 0, 1)
-    pdf.ln(10)
+    # Header
+    section = doc.sections[0]
+    header = section.header
+    htable = header.add_table(1, 2, width=Inches(6))
+    htable.autofit = False
+    htable.columns[0].width = Inches(2)
+    htable.columns[1].width = Inches(4)
     
-    # Headers
-    pdf.set_font('Arial', 'B', 10)
-    pdf.set_fill_color(220, 220, 220)
-    pdf.cell(50, 10, "Activity", 1, 0, 'L', 1)
-    pdf.cell(50, 10, "Hazard", 1, 0, 'L', 1)
-    pdf.cell(30, 10, "Risk", 1, 0, 'L', 1)
-    pdf.cell(60, 10, "Control Measure", 1, 1, 'L', 1)
+    if co_details['logo']:
+        logo_stream = io.BytesIO(co_details['logo'].getvalue())
+        htable.cell(0,0).paragraphs[0].add_run().add_picture(logo_stream, width=Inches(1.5))
     
-    pdf.set_font('Arial', '', 9)
-    for r in risks:
-        # Simple multiline handling for cells
-        x = pdf.get_x()
-        y = pdf.get_y()
-        max_h = 20 # fixed height for simplicity in demo
+    htable.cell(0,1).text = f"{co_details['name']}\nLicence: {co_details['lic']}\nAS 4349.1 Inspection Report"
+    
+    # Body
+    doc.add_heading('Property Inspection Report', 0)
+    
+    p = doc.add_paragraph()
+    p.add_run(f"Address: {prop['address']}\n").bold = True
+    p.add_run(f"Client: {prop['client']}\n")
+    p.add_run(f"Inspector: {inspector}\n")
+    p.add_run(f"Date: {datetime.now().strftime('%d/%m/%Y')}")
+    
+    doc.add_heading('Executive Summary', level=1)
+    doc.add_paragraph(summary)
+
+    # Financial Section (The Calculator Result)
+    doc.add_heading('Estimated Repair Costs', level=1)
+    p_fin = doc.add_paragraph()
+    p_fin.add_run(f"Total Estimate: {total_est_str}").bold = True
+    p_fin.add_run("\n*These estimates are indicative only and subject to trade quotes.").italic = True
+    
+    doc.add_heading('Defect Register', level=1)
+    
+    for item in data:
+        table = doc.add_table(rows=1, cols=2)
+        table.style = 'Table Grid'
         
-        pdf.cell(50, max_h, r.get('activity',''), 1)
-        pdf.cell(50, max_h, r.get('hazard',''), 1)
-        pdf.cell(30, max_h, r.get('risk_level',''), 1)
-        pdf.multi_cell(60, max_h, r.get('control',''), 1)
-        # Reset position if multicell breaks flow (simple grid logic)
-        pdf.set_xy(x, y + max_h) 
+        img_cell = table.cell(0, 0)
+        paragraph = img_cell.paragraphs[0]
+        if 'image_data' in item and item['image_data']:
+            try:
+                img_bytes = base64.b64decode(item['image_data'])
+                img_stream = io.BytesIO(img_bytes)
+                # Max width for DOCX cell
+                paragraph.add_run().add_picture(img_stream, width=Inches(2.5)) 
+            except:
+                paragraph.text = "[Image Error]"
+        else:
+            paragraph.text = "[No Image]"
+            
+        txt_cell = table.cell(0, 1)
+        txt_cell.text = ""
+        p = txt_cell.add_paragraph()
+        p.add_run(f"{item['defect_name']}").bold = True
+        p.add_run(f"\nArea: {item['area']}")
+        # Highlight severity color (basic attempt, DOCX styles are complex)
+        severity_run = p.add_run(f"\nSeverity: {item['severity']}")
+        if "Major" in item['severity'] or "Safety" in item['severity']:
+             severity_run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00) # Red
         
-    pdf.ln(10)
-    pdf.cell(0, 10, "I confirm I have read and understood this SWMS.", 0, 1)
-    pdf.cell(0, 10, "Signature: __________________________", 0, 1)
-    
-    return pdf.output(dest='S').encode('latin-1')
+        p.add_run("\n\nObservation:").bold = True
+        p.add_run(f" {item['observation']}")
+        
+        p.add_run("\n\nRecommendation:").bold = True
+        p.add_run(f" {item['recommendation']}")
+        
+        p.add_run("\n\nEst. Cost: ").bold = True
+        p.add_run(f"{item.get('cost', 'N/A')}")
 
-# --- NEWS ENGINE ---
-@st.cache_data(ttl=3600)
-def fetch_news():
-    feeds = [
-        "https://www.architectureanddesign.com.au/rss",
-        "https://sourceable.net/feed/"
-    ]
-    items = []
-    for url in feeds:
-        try:
-            resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-            if resp.status_code == 200:
-                feed = feedparser.parse(resp.content)
-                for entry in feed.entries[:2]:
-                    items.append({
-                        "title": entry.title,
-                        "link": entry.link,
-                        "published": entry.get('published', 'Recent'),
-                        "summary": entry.get('summary', '')[:140] + "..."
-                    })
-        except: continue
-    return items
+        # Add scope if present
+        if item.get('scope'):
+            p.add_run("\nScope of Works: ").bold = True
+            p.add_run(f"{item['scope']}")
 
-# --- UI PAGES ---
+        doc.add_paragraph("")
 
+    f = io.BytesIO()
+    doc.save(f)
+    return f.getvalue()
+
+# --- UI MODULES ---
 def login_page():
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
-        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
         st.markdown(get_logo_svg(), unsafe_allow_html=True)
         st.markdown("""
-        <div style='background:white; padding:40px; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.05); margin-top:20px; border:1px solid #F1F5F9;'>
-            <h3 style='text-align:center; margin-bottom:20px; color:#0F172A;'>Inspector Portal</h3>
+        <div style='background:white; padding:40px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.05); margin-top:20px; text-align:center;'>
+            <h3 style='color:#0F172A;'>Inspector Portal</h3>
+            <p style='color:#64748B; font-size:0.9em;'>Enterprise Edition v6.0</p>
         </div>
         """, unsafe_allow_html=True)
         
         with st.form("login_form"):
-            u = st.text_input("Username", help="Enter your registered username")
-            p = st.text_input("Password", type="password", help="Case sensitive")
+            u = st.text_input("Username", help="Enter your registered ID")
+            p = st.text_input("Password", type="password")
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.form_submit_button("Secure Login", use_container_width=True):
+            if st.form_submit_button("Secure Login"):
                 user = check_login(u, p)
                 if user:
-                    st.session_state.update({
-                        'logged_in': True, 
-                        'role': user[0], 
-                        'fullname': user[1],
-                        'page': 'New Inspection'
-                    })
+                    # User logged in successfully
+                    st.session_state.update({'logged_in': True, 'role': user[0], 'fullname': user[1], 'page': 'New Inspection'})
                     st.rerun()
-                else:
-                    st.error("Invalid Credentials")
-
-def admin_page():
-    section_header("Admin Console", "shield")
-    
-    tab1, tab2 = st.tabs(["👥 User Management", "➕ Add Inspector"])
-    
-    with tab1:
-        st.subheader("Current Users")
-        users = get_all_users()
-        st.dataframe(users, column_config={"username": "Username", "role": "Role", "full_name": "Full Name"}, use_container_width=True, hide_index=True)
-        
-        st.markdown("### User Actions")
-        c1, c2 = st.columns([3, 1])
-        user_to_del = c1.selectbox("Select User to Remove", users['username'].tolist())
-        if c2.button("🗑️ Delete User", use_container_width=True):
-            if user_to_del == st.session_state['username']: st.error("You cannot delete yourself.")
-            else:
-                success, msg = remove_user(user_to_del)
-                if success: st.success(msg); time.sleep(1); st.rerun()
-                else: st.error(msg)
-                
-    with tab2:
-        st.subheader("Register New Inspector")
-        with st.form("add_user_form"):
-            c1, c2 = st.columns(2)
-            new_user = c1.text_input("Username", help="Unique identifier")
-            new_pass = c2.text_input("Password", type="password")
-            new_name = st.text_input("Full Name")
-            new_role = st.selectbox("Role", ["Inspector", "Admin"])
-            
-            if st.form_submit_button("Create Account"):
-                if new_user and new_pass:
-                    success, msg = create_user(new_user, new_pass, new_role, new_name)
-                    if success: st.success(msg); time.sleep(1); st.rerun()
-                    else: st.error(msg)
-                else: st.warning("All fields are required.")
-
-def safety_page(ai: AIEngine):
-    section_header("Site Safety (SWMS)", "helmet")
-    st.markdown("Create a **Safe Work Method Statement** before starting inspection.")
-    
-    if 'swms_data' not in st.session_state: st.session_state['swms_data'] = []
-    
-    with st.container():
-        c1, c2 = st.columns(2)
-        weather = c1.selectbox("Weather Conditions", ["Sunny", "Raining", "Windy", "Stormy", "Extreme Heat"], help="Affects roof access risks")
-        year = c2.number_input("Property Build Year", 1900, 2025, 2000, help="Determines asbestos/lead risk")
-        
-        if st.button("Generate SWMS (AI)"):
-            with st.spinner("Identifying Hazards..."):
-                risks = ai.generate_swms_content(weather, year)
-                if risks:
-                    st.session_state['swms_data'] = risks
-                    st.success("Risk Assessment Generated")
-                else:
-                    st.error("AI service unavailable. Please enter manually.")
-
-    if st.session_state['swms_data']:
-        st.subheader("Risk Register")
-        # Editable Dataframe
-        edited_swms = st.data_editor(
-            st.session_state['swms_data'], 
-            num_rows="dynamic", 
-            use_container_width=True,
-            column_config={
-                "risk_level": st.column_config.SelectboxColumn("Risk", options=["Low", "Medium", "High", "Critical"])
-            }
-        )
-        st.session_state['swms_data'] = edited_swms
-        
-        if st.button("📄 Download SWMS PDF"):
-            pdf_bytes = generate_pdf_swms(
-                st.session_state['swms_data'], 
-                st.session_state.get('addr', 'Site Not Specified'), 
-                st.session_state['fullname']
-            )
-            st.download_button("Click to Download", pdf_bytes, "SWMS.pdf", "application/pdf")
+                else: st.error("Access Denied")
 
 def inspection_page(ai: AIEngine):
     section_header("New Inspection", "clipboard")
     
-    # 1. Save/Load Draft (Functional)
-    with st.expander("💾 Session Management (Save/Restore)", expanded=False):
+    # Save/Restore
+    with st.expander("💾 Session Controls"):
         c1, c2 = st.columns(2)
-        current_data = json.dumps(st.session_state['defects'])
-        c1.download_button("Download Progress (JSON)", current_data, "site_draft.json", "application/json", help="Save your work to a file")
-        
-        uploaded_json = c2.file_uploader("Restore Progress", type=['json'], help="Upload a previously saved JSON file")
-        if uploaded_json:
-            try:
-                st.session_state['defects'] = json.load(uploaded_json)
-                st.success("Session Restored!")
-                time.sleep(0.5)
-                st.rerun()
-            except: st.error("Invalid File")
+        # Download defect list as JSON
+        c1.download_button("Backup Session (JSON)", json.dumps(st.session_state['defects']), "draft.json", "application/json")
+        up = c2.file_uploader("Restore Session", type=['json'])
+        if up:
+            st.session_state['defects'] = json.load(up)
+            st.rerun()
 
-    # 2. Scope
     with st.container():
-        st.subheader("Property Details")
+        st.subheader("📍 Property Scope")
         c1, c2, c3 = st.columns([2, 1, 1])
-        addr = c1.text_input("Address", st.session_state.get('addr', ''), help="Full street address")
-        client = c2.text_input("Client", st.session_state.get('client', ''), help="Name for the report")
-        year = c3.number_input("Year Built", 1900, 2025, 2000, help="Used for AI risk profiling")
+        st.session_state['addr'] = c1.text_input("Address", st.session_state.get('addr', ''))
+        st.session_state['client'] = c2.text_input("Client", st.session_state.get('client', ''))
+        year = c3.number_input("Year Built", 1900, 2025, st.session_state.get('year_built', 2000))
+        st.session_state['year_built'] = year
         
-        st.session_state['addr'] = addr
-        st.session_state['client'] = client
-
-        if year and st.button("Generate Risk Profile (AI)"):
-            with st.spinner("Analyzing Build Era..."):
-                risk = ai.suggest_hazards(year)
-                st.info(f"⚠️ Likely Era Hazards: {risk}")
+        # Maintenance Plan Generation
+        if year and st.button("Generate Maintenance Plan (AI)"):
+            with st.spinner("Building 5-Year Plan..."):
+                plan = ai.generate_maintenance(year, st.session_state['defects'])
+                st.session_state['maint_plan'] = plan
+                st.info("Maintenance Plan Generated (See Reports)")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 3. Defect Logging
-    col_main, col_sidebar = st.columns([1.5, 1])
+    col_main, col_sidebar = st.columns([1.6, 1])
     
     with col_main:
         section_header("Defect Entry", "camera")
         with st.container():
-            area = st.selectbox("Area Inspected", AREAS, help="Select the zone of the house")
+            area = st.selectbox("Area Inspected", AREAS)
             
-            # AI Camera with Hover Preview
-            st.markdown("**📸 Vision AI & Evidence**")
-            img_file = st.file_uploader("Upload Evidence", type=['jpg', 'png'], help="Upload clear photos of the defect")
+            st.markdown("##### 📸 Evidence")
+            img_file = st.file_uploader("Upload Photo", type=['jpg', 'png'])
             
             ai_data = None
+            b64_str = None
             if img_file:
-                # Hover Preview Feature
-                img_bytes = img_file.getvalue()
-                b64_img = base64.b64encode(img_bytes).decode()
-                st.markdown(f"""
-                <div style="margin-bottom:10px;">
-                    <img src="data:image/png;base64,{b64_img}" class="hover-zoom" width="150" alt="Preview">
-                    <p style="font-size:12px; color:#64748B;"><i>Hover to zoom</i></p>
-                </div>
-                """, unsafe_allow_html=True)
+                b = img_file.getvalue()
+                b64_str = base64.b64encode(b).decode()
+                # Display image with hover zoom effect
+                st.markdown(f'<img src="data:image/png;base64,{b64_str}" class="hover-zoom" width="150">', unsafe_allow_html=True)
                 
-                if st.button("Analyze Image (AI)"):
-                    with st.spinner("Scanning..."):
+                # AI Analysis button
+                if st.button("Analyze Compliance (AI)"):
+                    with st.spinner("Checking AS 4349.1..."):
                         ai_data = ai.analyze_photo(Image.open(img_file))
                         st.session_state['temp_ai'] = ai_data
-                        st.success("Analysis Complete")
 
-            # Form Pre-fill
-            d_def, d_obs, d_rec = "", "", ""
+            # Pre-fill fields if AI data exists from analysis
+            d_d, d_o, d_r = "", "", ""
             if 'temp_ai' in st.session_state and st.session_state['temp_ai']:
                 raw = st.session_state['temp_ai']
-                if "Defect:" in raw: d_def = raw.split("Defect:", 1)[1].split("\n")[0].strip()
-                if "Observation:" in raw: d_obs = raw.split("Observation:", 1)[1].split("\n")[0].strip()
-                if "Recommendation:" in raw: d_rec = raw.split("Recommendation:", 1)[1].split("\n")[0].strip()
+                if "Defect:" in raw: d_d = raw.split("Defect:", 1)[1].split("\n")[0].strip()
+                if "Observation:" in raw: d_o = raw.split("Observation:", 1)[1].split("\n")[0].strip()
+                if "Recommendation:" in raw: d_r = raw.split("Recommendation:", 1)[1].split("\n")[0].strip()
+                # Clear temporary AI data after pre-fill
+                # st.session_state['temp_ai'] = None 
 
-            with st.form("entry_form"):
-                name = st.text_input("Defect Title", value=d_def, help="Short summary (e.g. Cracked Tile)")
+            with st.form("defect"):
+                name = st.text_input("Defect Title", value=d_d)
+                obs = st.text_area("Observation", value=d_o, height=100)
+                rec = st.text_area("Recommendation", value=d_r, height=100)
+                sev = st.selectbox("Severity", SEVERITY_LEVELS)
                 
-                c_obs, c_rew = st.columns([3, 1])
-                obs = c_obs.text_area("Observation", value=d_obs, height=100, help="Technical description of the issue")
-                if c_rew.form_submit_button("✨ Magic Rewrite"):
-                    obs = ai.magic_rewrite(obs)
-                    st.info("Rewritten: " + obs)
+                c_a, c_b, c_c = st.columns(3)
+                want_scope = c_a.checkbox("Generate Scope of Works")
+                want_impact = c_b.checkbox("Add Impact Analysis")
+                want_trade = c_c.checkbox("Suggest Trade")
                 
-                rec = st.text_area("Recommendation", value=d_rec, help="What needs to be done?")
-                sev = st.selectbox("Severity", SEVERITY_LEVELS, help="AS 4349.1 classification")
-                
-                cost = "N/A"
-                if st.form_submit_button("💲 Get Cost Est."):
-                    cost = ai.estimate_cost(name, sev)
-                    st.warning(f"Est: {cost}")
-                
+                # Form submission handles saving and AI generation
                 if st.form_submit_button("Save Defect"):
+                    # Run AI tasks
+                    scope_txt, impact_txt, trade_txt = "", "", ""
+                    
+                    # Estimate cost automatically (MANDATORY feature)
+                    cost_est_val = "N/A"
+                    if name and sev:
+                        try:
+                            cost_est_val = ai.estimate_cost(name, sev)
+                        except Exception as e: 
+                            print(f"Cost estimation failed: {e}")
+                            pass
+
+                    if want_scope: scope_txt = ai.generate_scope(name, rec)
+                    if want_impact: impact_txt = ai.explain_impact(name)
+                    if want_trade: trade_txt = ai.suggest_trade(name)
+                    
+                    # Save the new defect
                     st.session_state['defects'].append({
                         "area": area, "defect_name": name, "observation": obs,
-                        "severity": sev, "recommendation": rec, "cost": cost
+                        "severity": sev, "recommendation": rec,
+                        "scope": scope_txt, "impact": impact_txt, "trade": trade_txt,
+                        "cost": cost_est_val, # AI generated or N/A
+                        "image_data": b64_str
                     })
-                    st.success("Defect Logged")
+                    st.success(f"Defect '{name}' saved to Draft (Cost: {cost_est_val})")
+                    # Clear temp AI data after successful save
+                    st.session_state['temp_ai'] = None
+                    st.rerun() # Rerun to clear form
 
     with col_sidebar:
-        st.subheader("📝 Draft Items")
+        st.subheader("📋 Draft Register")
         if st.session_state['defects']:
-            st.metric("Total Logged", len(st.session_state['defects']))
-            df = pd.DataFrame(st.session_state['defects'])
-            st.dataframe(df[['area', 'defect_name']], hide_index=True, use_container_width=True)
+            # Calculate running total for display in the draft sidebar
+            t_min, t_max = calculate_total_repairs(st.session_state['defects'])
+            total_str = f"${t_min:,} - ${t_max:,}"
+            st.markdown(f"**Total Draft Est:** <span style='color:#3B82F6;'>{total_str}</span>", unsafe_allow_html=True)
+            st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
+            
+            for i, d in enumerate(st.session_state['defects']):
+                st.markdown(f"""
+                <div class="defect-card">
+                    <b>{d['area']}</b><br>
+                    {d['defect_name']}<br>
+                    <span style="color:#EF4444; font-size:0.8em;">{d['severity'].split('(')[0]}</span><br>
+                    <span style="color:#059669; font-size:0.8em;">Est: {d.get('cost','N/A')}</span>
+                </div>
+                """, unsafe_allow_html=True)
         else:
-            st.info("No items yet.")
+            st.info("No defects logged.")
 
 def report_page(ai: AIEngine):
-    section_header("Report Studio", "file-text")
+    section_header("Finalize Report: Review & Edit", "file-text")
     
-    if not st.session_state['defects']:
-        st.warning("No data found. Please complete an inspection first.")
-        return
+    # Branding Options
+    with st.expander("🎨 Report Branding", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        st.session_state['header_img'] = c1.file_uploader("Header Image (PDF/DOCX)", type=['png', 'jpg'])
+        st.session_state['footer_img'] = c2.file_uploader("Footer Image (PDF)", type=['png', 'jpg'])
+        # Add a placeholder for maintenance plan visibility
+        if st.session_state.get('maint_plan'):
+            c3.info("Maintenance Plan Ready")
+            with c3.expander("View Plan"):
+                st.markdown(st.session_state['maint_plan'])
 
-    st.subheader("Edit Findings")
-    df = pd.DataFrame(st.session_state['defects'])
-    edited_df = st.data_editor(
-        df, 
-        num_rows="dynamic", 
-        use_container_width=True,
-        column_config={
-            "severity": st.column_config.SelectboxColumn("Severity", options=SEVERITY_LEVELS)
-        }
-    )
-    st.session_state['defects'] = edited_df.to_dict('records')
+    st.subheader("Final Defect Register Review")
     
-    st.markdown("<hr>", unsafe_allow_html=True)
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Executive Summary")
-        if st.button("Generate Summary (AI)"):
-            with st.spinner("Writing..."):
-                st.session_state['summary'] = ai.generate_exec_summary(st.session_state['defects'])
+    if st.session_state['defects']:
+        # Convert defects list to DataFrame for the data editor
+        df = pd.DataFrame(st.session_state['defects'])
         
-        summ = st.text_area("Summary Text", st.session_state.get('summary', ''), height=150)
+        # Use data editor to allow inspector to make final manual edits (especially to cost)
+        edited_df = st.data_editor(
+            df, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            column_config={
+                "severity": st.column_config.SelectboxColumn("Severity", options=SEVERITY_LEVELS),
+                "cost": st.column_config.TextColumn("Est Cost ($)", help="Enter range e.g. $500 - $1,000")
+            },
+            # Hide complex data fields not needed for quick review, but keep 'image_data'
+            # The columns list must match the columns in the DataFrame
+            hide_index=True,
+            column_order=["area", "defect_name", "severity", "observation", "recommendation", "trade", "cost", "scope", "impact", "image_data"]
+        )
+        # Update session state with the edited data
+        st.session_state['defects'] = edited_df.to_dict('records')
+        
+        # CALCULATE TOTALS from the edited data
+        t_min, t_max = calculate_total_repairs(st.session_state['defects'])
+        total_str = f"${t_min:,} - ${t_max:,}"
+        
+        # Display Financial Box prominently
+        st.markdown(f"""
+        <div class="financial-box">
+            <h3>💰 Total Estimated Repair Costs</h3>
+            <div class="financial-total">{total_str}</div>
+            <p><i>This figure includes all line items above and is editable via the table.</i></p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<hr>", unsafe_allow_html=True)
 
-    with c2:
-        st.subheader("Finalize & Export")
-        accepted = st.checkbox("I certify this report meets AS 4349.1 standards.")
-        
-        if accepted:
-            logo_file = st.session_state.get('logo_file')
-            logo_bytes = io.BytesIO(logo_file.getvalue()) if logo_file else None
+        # Executive Summary Generation
+        if st.button("Generate Exec Summary (AI)"):
+            st.session_state['summary'] = ai.generate_exec_summary(st.session_state['defects'], total_str)
             
-            pdf_data = generate_pdf_report(
+        summ = st.text_area("Executive Summary (Final Edit)", st.session_state.get('summary', ''), height=200)
+        
+        c1, c2 = st.columns(2)
+        
+        # PDF Export
+        if c1.button("Download PDF Report"):
+            pdf_dat = generate_pdf(
                 st.session_state['defects'],
                 {"address": st.session_state.get('addr', ''), "client": st.session_state.get('client', '')},
                 st.session_state['fullname'],
-                {"name": st.session_state.get('co_name', 'SiteVision AI'), "lic": st.session_state.get('lic', ''), "logo": logo_bytes},
-                summ
+                {"name": st.session_state.get('co_name', ''), "lic": st.session_state.get('lic', ''), 
+                 "logo": st.session_state.get('logo_file'), "header": st.session_state.get('header_img'), 
+                 "footer": st.session_state.get('footer_img')},
+                summ,
+                total_str # Pass the calculated total string
             )
+            st.download_button("Get PDF", pdf_dat, f"Inspection_Report_{datetime.now().strftime('%Y%m%d')}.pdf", "application/pdf")
             
-            st.download_button(
-                label="📄 Download Professional PDF",
-                data=pdf_data,
-                file_name=f"Report_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime='application/pdf',
-                type='primary',
-                use_container_width=True
+        # DOCX Export
+        if c2.button("Download Word (DOCX)"):
+            docx_dat = generate_docx(
+                st.session_state['defects'],
+                {"address": st.session_state.get('addr', ''), "client": st.session_state.get('client', '')},
+                st.session_state['fullname'],
+                {"name": st.session_state.get('co_name', ''), "lic": st.session_state.get('lic', ''), 
+                 "logo": st.session_state.get('logo_file')},
+                summ,
+                total_str # Pass the calculated total string
             )
-
-def dashboard_page():
-    section_header("Dashboard", "bar-chart")
-    
-    defects = st.session_state.get('defects', [])
-    score = 100
-    for d in defects:
-        if "Major" in d['severity']: score -= 15
-        elif "Safety" in d['severity']: score -= 20
-        else: score -= 5
-    score = max(0, score)
-    
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Health Score", f"{score}/100")
-    c2.metric("Active Defects", len(defects))
-    c3.metric("System", "Online")
-    
-    st.markdown("### 📰 Industry News")
-    news = fetch_news()
-    if news:
-        for n in news:
-            st.markdown(f"**[{n['title']}]({n['link']})**")
-            st.caption(n['summary'])
+            st.download_button("Get DOCX", docx_dat, f"Inspection_Report_{datetime.now().strftime('%Y%m%d')}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     else:
-        st.caption("No news available currently.")
+        st.info("No defects have been logged yet. Please start a new inspection first.")
 
-# --- MAIN CONTROLLER ---
+def section_header(text, icon):
+    # This is a cosmetic header function
+    st.markdown(f"""
+    <div style="display: flex; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #E2E8F0; padding-bottom: 10px;">
+        <h2 style="margin: 0; color: #0F172A;">{text}</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+# --- MAIN APPLICATION ENTRY POINT ---
 def main():
     init_db()
     apply_custom_css()
     
+    # Initialize session state variables
     if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
     if 'defects' not in st.session_state: st.session_state['defects'] = []
-    if 'page' not in st.session_state: st.session_state['page'] = 'New Inspection' # Set New Inspection as default landing
+    if 'page' not in st.session_state: st.session_state['page'] = 'New Inspection'
     
+    # Initialize AI Engine (needs API key from settings)
     ai = AIEngine(st.session_state.get('api_key'))
     
     if not st.session_state['logged_in']:
         login_page()
     else:
+        # Sidebar Navigation
         with st.sidebar:
             st.markdown(get_logo_svg(), unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # Navigation
-            menu_opts = ["New Inspection", "Dashboard", "Reports", "Site Safety", "Admin"]
-            selected_page = st.radio("Navigate", menu_opts, index=menu_opts.index(st.session_state.get('page', 'New Inspection')))
-            st.session_state['page'] = selected_page
+            menu = ["New Inspection", "Dashboard", "Finalize Report", "Admin"]
+            pg = st.radio("Navigate", menu, index=menu.index(st.session_state['page']) if st.session_state['page'] in menu else 0)
+            st.session_state['page'] = pg
             
-            st.markdown("<hr>", unsafe_allow_html=True)
             with st.expander("⚙️ Settings"):
                 st.session_state['api_key'] = st.text_input("AI Key", type="password", value=st.session_state.get('api_key', ''))
-                st.session_state['co_name'] = st.text_input("Company", value="SiteVision AI")
-                st.session_state['lic'] = st.text_input("Licence", value="AU-000")
-                l = st.file_uploader("Logo", type=['png', 'jpg'])
-                if l: st.session_state['logo_file'] = l
-
-            if st.button("Logout", use_container_width=True):
+                st.session_state['co_name'] = st.text_input("Company Name", value=st.session_state.get('co_name', 'SiteVision Pty Ltd'))
+                st.session_state['lic'] = st.text_input("Inspector Licence", value=st.session_state.get('lic', 'AU-4349'))
+                st.session_state['logo_file'] = st.file_uploader("Company Logo", type=['png', 'jpg'])
+                
+            if st.button("Logout"):
                 st.session_state.clear()
                 st.rerun()
 
-        pg = st.session_state['page']
-        if pg == "New Inspection": inspection_page(ai)
-        elif pg == "Dashboard": dashboard_page()
-        elif pg == "Reports": report_page(ai)
+        # Page Routing
+        if pg == "New Inspection": 
+            inspection_page(ai)
+        elif pg == "Dashboard": 
+            section_header("Dashboard", "")
+            # Recalculate totals for dashboard metric
+            t_min, t_max = calculate_total_repairs(st.session_state['defects'])
+            total_str = f"${t_min:,} - ${t_max:,}"
+
+            c1,c2,c3 = st.columns(3)
+            c1.metric("Defects Logged", len(st.session_state['defects']))
+            c2.metric("Total Est. Cost", total_str)
+            c3.metric("Status", "Inspection in Progress")
+            
+            if st.session_state.get('maint_plan'):
+                st.markdown("---")
+                st.subheader("5-Year Maintenance Plan")
+                st.markdown(st.session_state['maint_plan'])
+
+        elif pg == "Finalize Report": 
+            report_page(ai)
         elif pg == "Admin": 
-            if st.session_state['role'] == 'admin': admin_page()
-            else: st.warning("Access Restricted")
-        elif pg == "Site Safety": safety_page(ai)
+            if st.session_state['role'] == 'admin': 
+                st.write("Admin Panel: Manage Users (Not Implemented in Mock)") 
+            else: st.error("Access Restricted to Administrators")
 
 if __name__ == '__main__':
     main()
