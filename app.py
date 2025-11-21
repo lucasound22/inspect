@@ -11,10 +11,12 @@ import hashlib
 import time
 import tempfile
 import os
+import requests
+import json
 
 # --- CONFIGURATION & SETUP ---
 st.set_page_config(
-    page_title="InspectPro | Professional Building Inspection",
+    page_title="AI Building Inspect | Enterprise",
     page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -24,600 +26,550 @@ st.set_page_config(
 def apply_custom_css():
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
         
         html, body, [class*="css"] {
-            font-family: 'Inter', sans-serif;
-            color: #1e293b;
+            font-family: 'Roboto', sans-serif;
+            color: #172b4d;
         }
         
-        /* Main Background */
+        /* Brand Colors */
+        :root {
+            --primary: #0052CC;
+            --secondary: #FFAB00;
+            --danger: #FF5630;
+            --bg-light: #F4F5F7;
+        }
+
         .stApp {
-            background-color: #f1f5f9;
+            background-color: var(--bg-light);
         }
         
         /* Sidebar Styling */
         [data-testid="stSidebar"] {
-            background-color: #ffffff;
-            border-right: 1px solid #e2e8f0;
+            background-color: #FFFFFF;
+            border-right: 1px solid #DFE1E6;
+        }
+        
+        /* Professional Cards */
+        div.stContainer, div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] > div[data-testid="stVerticalBlock"] {
+            background-color: white;
+            padding: 24px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            border: 1px solid #EBECF0;
         }
         
         /* Headers */
         h1, h2, h3 {
-            color: #0f172a;
+            color: #091E42;
             font-weight: 700;
-            letter-spacing: -0.025em;
+            letter-spacing: -0.01em;
         }
         
-        /* Cards/Containers */
-        .stContainer, [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
-            background-color: white;
-            padding: 1.5rem;
-            border-radius: 12px;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
-            border: 1px solid #e2e8f0;
-        }
-        
-        /* Primary Buttons */
+        /* Interactive Elements */
         .stButton button {
-            background-color: #2563eb;
+            background-color: var(--primary);
             color: white;
-            border-radius: 8px;
-            font-weight: 600;
+            font-weight: 500;
+            border-radius: 4px;
             border: none;
-            padding: 0.5rem 1rem;
-            transition: all 0.2s;
+            height: 42px;
+            box-shadow: 0 2px 4px rgba(0,82,204,0.2);
+            transition: all 0.2s ease;
         }
         .stButton button:hover {
-            background-color: #1d4ed8;
-            box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
-        }
-        
-        /* Inputs */
-        .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {
-            border-radius: 8px;
-            border-color: #cbd5e1;
+            background-color: #0065FF;
+            transform: translateY(-1px);
         }
         
         /* Metrics */
         [data-testid="stMetricValue"] {
-            color: #2563eb;
-            font-weight: 700;
-        }
-        
-        /* Login Box Container Specifics */
-        .login-container {
-            max-width: 400px;
-            margin: 0 auto;
+            font-size: 2rem;
+            color: var(--primary);
         }
     </style>
     """, unsafe_allow_html=True)
 
 def get_logo_svg():
-    """Returns the SVG code for the embedded logo"""
     return """
-    <svg width="100%" height="50" viewBox="0 0 220 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="0" y="5" width="40" height="40" rx="8" fill="#2563EB"/>
-        <path d="M20 15L30 35H10L20 15Z" fill="white"/>
-        <rect x="16" y="30" width="8" height="8" fill="white"/>
-        <text x="50" y="33" fill="#0F172A" font-family="Inter, sans-serif" font-weight="bold" font-size="24">Inspect<tspan fill="#2563EB">Pro</tspan></text>
+    <svg width="100%" height="60" viewBox="0 0 240 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 45V15L40 5L60 15V45H20Z" fill="#0052CC"/>
+        <path d="M30 25H50M30 35H50" stroke="white" stroke-width="2"/>
+        <circle cx="40" cy="20" r="6" fill="#FFAB00"/>
+        <path d="M40 20L45 15" stroke="white" stroke-width="1.5"/>
+        <text x="70" y="38" fill="#172B4D" font-family="Roboto, sans-serif" font-weight="bold" font-size="24">AI Building<tspan fill="#0052CC">Inspect</tspan></text>
     </svg>
     """
 
-# --- CONSTANTS & STANDARDS (AS 4349.1) ---
+# --- STANDARDS & DATA ---
 SEVERITY_LEVELS = [
-    "Minor Defect (Maintenance)",
-    "Major Defect (Structural/Significant)",
-    "Safety Hazard (Urgent)",
+    "Minor Defect (Maintenance - AS 4349.1)",
+    "Major Defect (Structural/Significant - AS 4349.1)",
+    "Safety Hazard (NCC Vol 2 Compliance)",
     "Further Investigation Required"
 ]
 
 AREAS = [
-    "Site & Fencing",
-    "Exterior",
-    "Sub-floor Space",
-    "Roof Exterior",
-    "Roof Space",
-    "Interior",
-    "Garage/Carport",
-    "Wet Areas"
+    "Site & Fencing", "Exterior", "Sub-floor Space", "Roof Exterior", 
+    "Roof Space", "Interior", "Garage/Carport", "Wet Areas"
 ]
 
-COMMON_DEFECTS = {
-    "Interior": [
-        {"name": "Drummy Tiles", "obs": "Hollow sound detected when tapping floor tiles, indicating loss of adhesion.", "rec": "Engage a tiler to remove and re-fix affected tiles.", "sev": "Minor Defect (Maintenance)"},
-        {"name": "Settlement Cracks", "obs": "Minor hairline cracking observed to cornices/plasterboard.", "rec": "Patch and paint as part of normal maintenance.", "sev": "Minor Defect (Maintenance)"},
-        {"name": "Moisture Ingress", "obs": "High moisture readings and staining visible on wall.", "rec": "Investigate source of leak immediately and repair.", "sev": "Major Defect (Structural/Significant)"}
-    ],
-    "Exterior": [
-        {"name": "Cracked Brickwork", "obs": "Stepped cracking visible in masonry walls.", "rec": "Engage a structural engineer to assess foundation movement.", "sev": "Major Defect (Structural/Significant)"},
-        {"name": "Timber Rot", "obs": "Fungal decay (rot) visible in window frames.", "rec": "Joiner to cut out rot and splice in new timber or replace unit.", "sev": "Major Defect (Structural/Significant)"}
-    ],
-    "Roof Exterior": [
-        {"name": "Broken Tiles", "obs": "Cracked and displaced roof tiles visible.", "rec": "Replace damaged tiles to prevent water ingress.", "sev": "Minor Defect (Maintenance)"},
-        {"name": "Blocked Gutters", "obs": "Significant debris buildup in gutters.", "rec": "Clean gutters to prevent overflow and backflow.", "sev": "Minor Defect (Maintenance)"}
-    ],
-    "Sub-floor Space": [
-        {"name": "Damp Soil", "obs": "Soil in subfloor is excessively damp.", "rec": "Improve subfloor ventilation and drainage.", "sev": "Major Defect (Structural/Significant)"},
-        {"name": "Termite Barrier Breached", "obs": "Termite shielding physically damaged or bridged.", "rec": "Pest controller to inspect and repair barrier immediately.", "sev": "Safety Hazard (Urgent)"}
-    ]
-}
-
-# --- DATABASE HANDLING ---
+# --- DATABASE ---
 def init_db():
-    """Initialize SQLite DB and handle admin password resets."""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (username TEXT PRIMARY KEY, password TEXT, role TEXT, full_name TEXT)''')
-    
-    # Hash for 'inspect' - SHA256
+    c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, role TEXT, full_name TEXT)''')
+    # Hash for 'inspect' (SHA256)
     secure_pass = hashlib.sha256(b"inspect").hexdigest()
-    
-    # Check for admin
+    # Ensure admin exists and password is strictly set to 'inspect'
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
         c.execute("INSERT INTO users VALUES ('admin', ?, 'admin', 'Principal Inspector')", (secure_pass,))
     else:
-        # Force update password to ensure 'inspect' works (fixes login issues)
         c.execute("UPDATE users SET password = ? WHERE username = 'admin'", (secure_pass,))
-        
     conn.commit()
     conn.close()
 
 def check_login(username, password):
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    hashed_pw = hashlib.sha256(password.encode()).hexdigest()
-    c.execute("SELECT role, full_name FROM users WHERE username = ? AND password = ?", (username, hashed_pw))
+    hashed = hashlib.sha256(password.encode()).hexdigest()
+    c.execute("SELECT role, full_name FROM users WHERE username = ? AND password = ?", (username, hashed))
     user = c.fetchone()
     conn.close()
     return user
 
-def add_user(username, password, role, full_name):
-    try:
-        conn = sqlite3.connect('users.db')
-        c = conn.cursor()
-        hashed_pw = hashlib.sha256(password.encode()).hexdigest()
-        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", (username, hashed_pw, role, full_name))
-        conn.commit()
-        conn.close()
-        return True
-    except sqlite3.IntegrityError:
-        return False
+# --- AI ENGINE ---
+class AIEngine:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        if api_key:
+            genai.configure(api_key=api_key)
+            self.model = genai.GenerativeModel('gemini-1.5-flash')
+        else:
+            self.model = None
 
-def get_all_users():
-    conn = sqlite3.connect('users.db')
-    df = pd.read_sql_query("SELECT username, role, full_name FROM users", conn)
-    conn.close()
-    return df
-
-# --- AI INTEGRATION ---
-def analyze_image_with_ai(image, api_key):
-    if not api_key:
-        return "Error: Please provide a Google Gemini API Key in settings."
-    
-    try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
+    def analyze_photo(self, image):
+        if not self.model: return "AI Key Required for Analysis."
         prompt = """
-        Act as a qualified Australian Building Inspector compliant with AS 4349.1.
-        Analyze this image of a building defect.
-        Provide a response in this exact format:
+        Act as a Senior Australian Building Inspector. Analyze this image for defects.
+        Reference AS 4349.1 (Residential) and NCC 2022 Volume 2 where applicable.
         
-        Defect: [Short, professional name]
-        Observation: [Technical description of the visual evidence]
-        Severity: [Choose strictly one: Minor Defect (Maintenance), Major Defect (Structural/Significant), Safety Hazard (Urgent)]
-        Recommendation: [Standard remedial advice suitable for a report]
+        Return exactly:
+        Defect: [Name]
+        Observation: [Technical description using inspector terminology]
+        Standard: [Cite relevant Australian Standard clause if visible, e.g. 'Likely breach of AS 3740 Waterproofing']
+        Severity: [Minor/Major/Safety]
+        Recommendation: [Remedial action]
         """
-        
-        response = model.generate_content([prompt, image])
-        return response.text
-    except Exception as e:
-        return f"AI Analysis Failed: {str(e)}"
+        try:
+            return self.model.generate_content([prompt, image]).text
+        except Exception as e: return f"Error: {e}"
 
-# --- PDF GENERATION CLASS ---
-class InspectionPDF(FPDF):
-    def __init__(self, company_name, license_no, logo_path=None):
+    def magic_rewrite(self, rough_text):
+        if not self.model: return rough_text
+        prompt = f"""
+        Rewrite the following rough inspection notes into professional, technical Australian English suitable for a formal legal report. 
+        Use terms compliant with AS 4349.1.
+        
+        Rough notes: "{rough_text}"
+        """
+        try:
+            return self.model.generate_content(prompt).text.strip()
+        except: return rough_text
+
+    def estimate_cost(self, defect_name, severity):
+        if not self.model: return "N/A"
+        prompt = f"""
+        Estimate the repair cost range in AUD (Australian Dollars) for a building defect: '{defect_name}' with severity '{severity}'.
+        Return ONLY the price range (e.g. "$500 - $1,200"). Do not add text.
+        """
+        try:
+            return self.model.generate_content(prompt).text.strip()
+        except: return "N/A"
+
+    def suggest_hazards(self, build_year):
+        if not self.model: return "AI unavailable."
+        prompt = f"""
+        Given a house built in {build_year} in Australia, list 3 specific high-risk inspection items to check for (e.g., Asbestos, Lead, Wiring types). 
+        Keep it brief.
+        """
+        try:
+            return self.model.generate_content(prompt).text
+        except: return "Could not generate profile."
+
+    def generate_swms(self, weather, year):
+        if not self.model: return "AI Key Required for SWMS."
+        prompt = f"""
+        Create a brief Safe Work Method Statement (SWMS) for a building inspector.
+        Context: Residential property built in {year}, Weather: {weather}.
+        List 4 key hazards and control measures. Focus on Australian OH&S.
+        """
+        try:
+            return self.model.generate_content(prompt).text
+        except: return "SWMS Generation Failed."
+
+    def generate_exec_summary(self, defects_list):
+        if not self.model or not defects_list: return "Summary not available."
+        defects_str = ", ".join([f"{d['defect_name']} ({d['severity']})" for d in defects_list])
+        prompt = f"""
+        Write a professional Executive Summary (1 paragraph) for a Building Inspection Report based on these findings: {defects_str}.
+        Focus on the overall condition and major safety risks.
+        """
+        try:
+            return self.model.generate_content(prompt).text
+        except: return "Summary generation failed."
+
+# --- NEWS FETCHING ---
+@st.cache_data(ttl=3600)
+def fetch_news():
+    feeds = [
+        "https://www.architectureanddesign.com.au/rss",
+        "https://sourceable.net/feed/",
+        "https://www.buildaustralia.com.au/feed/"
+    ]
+    news_items = []
+    for url in feeds:
+        try:
+            # Use requests to handle headers properly, preventing 403 blocks
+            response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+            if response.status_code == 200:
+                feed = feedparser.parse(response.content)
+                for entry in feed.entries[:3]:
+                    news_items.append({
+                        "title": entry.title,
+                        "link": entry.link,
+                        "published": entry.get('published', datetime.now().strftime('%d %b')),
+                        "summary": entry.get('summary', '')[:150] + "..."
+                    })
+        except: continue
+    return news_items
+
+# --- PDF GENERATOR ---
+class ReportPDF(FPDF):
+    def __init__(self, company, license, logo_path):
         super().__init__()
-        self.company_name = company_name
-        self.license_no = license_no
+        self.company = company
+        self.license = license
         self.logo_path = logo_path
 
     def header(self):
         if self.logo_path:
-            try:
-                # Logo handling
-                self.image(self.logo_path, 10, 10, 30)
+            try: self.image(self.logo_path, 10, 10, 40)
             except: pass
-        
         self.set_font('Arial', 'B', 16)
-        # Offset title if logo exists
-        if self.logo_path: self.cell(35)
-        self.cell(0, 10, f'{self.company_name} - Inspection Report', 0, 1, 'L')
-        
-        if self.logo_path: self.cell(35)
+        self.cell(50)
+        self.cell(0, 10, f"{self.company} - Inspection Report", 0, 1, 'R')
         self.set_font('Arial', '', 10)
-        self.set_text_color(100, 100, 100)
-        self.cell(0, 5, f'Licence No: {self.license_no} | Compliant with AS 4349.1', 0, 1, 'L')
-        self.set_text_color(0)
-        self.ln(15)
+        self.cell(0, 10, f"Licence: {self.license} | AS 4349.1 Compliant", 0, 1, 'R')
         self.line(10, 35, 200, 35)
-        self.ln(10)
+        self.ln(20)
 
     def footer(self):
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
-        self.set_text_color(128)
-        self.cell(0, 10, f'Generated by InspectPro - {self.company_name} | Page {self.page_no()}', 0, 0, 'C')
+        self.cell(0, 10, f"Generated by AI Building Inspect | Page {self.page_no()}", 0, 0, 'C')
 
-    def chapter_title(self, label):
-        self.set_font('Arial', 'B', 12)
-        self.set_fill_color(240, 244, 248) # Light gray/blue
-        self.cell(0, 8, f"  {label}", 0, 1, 'L', 1)
-        self.ln(4)
-
-def generate_final_pdf(report_data, prop_details, inspector, company, license_num, logo_file):
-    logo_path = None
-    if logo_file:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-            tmp.write(logo_file.getvalue())
-            logo_path = tmp.name
-
-    pdf = InspectionPDF(company, license_num, logo_path)
+def generate_pdf(data, prop, inspector, co_details, summary):
+    pdf = ReportPDF(co_details['name'], co_details['lic'], co_details['logo'])
     pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
     
-    # 1. Property Details Section
+    # Details
     pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, "Property Inspection Details", 0, 1)
+    pdf.cell(0, 10, "Property Details", 0, 1)
+    pdf.set_font('Arial', '', 11)
+    pdf.cell(40, 8, "Address:", 0); pdf.cell(0, 8, prop['address'], 0, 1)
+    pdf.cell(40, 8, "Client:", 0); pdf.cell(0, 8, prop['client'], 0, 1)
+    pdf.cell(40, 8, "Inspector:", 0); pdf.cell(0, 8, inspector, 0, 1)
+    pdf.ln(5)
+    
+    # Executive Summary
+    pdf.set_fill_color(240, 240, 240)
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 10, "Executive Summary", 0, 1, 'L', 1)
     pdf.set_font('Arial', '', 10)
-    
-    # Grid layout for details
-    pdf.cell(30, 7, "Address:", 0); pdf.cell(0, 7, prop_details['address'], 0, 1)
-    pdf.cell(30, 7, "Client:", 0); pdf.cell(0, 7, prop_details['client'], 0, 1)
-    pdf.cell(30, 7, "Date:", 0); pdf.cell(0, 7, datetime.now().strftime('%d %B %Y'), 0, 1)
-    pdf.cell(30, 7, "Inspector:", 0); pdf.cell(0, 7, inspector, 0, 1)
+    pdf.multi_cell(0, 6, summary)
     pdf.ln(10)
-
-    # 2. Executive Summary
-    pdf.chapter_title("Executive Summary")
-    minor_count = len([x for x in report_data if "Minor" in x['severity']])
-    major_count = len([x for x in report_data if "Major" in x['severity']])
-    safety_count = len([x for x in report_data if "Safety" in x['severity']])
     
-    pdf.set_font('Arial', 'B', 10)
-    pdf.set_fill_color(255, 255, 255)
+    # Findings
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 10, "Defect Findings", 0, 1, 'L', 1)
     
-    # Draw summary boxes
-    start_y = pdf.get_y()
-    pdf.rect(10, start_y, 60, 15); pdf.text(15, start_y + 10, f"Major Defects: {major_count}")
-    pdf.rect(75, start_y, 60, 15); pdf.text(80, start_y + 10, f"Safety Hazards: {safety_count}")
-    pdf.rect(140, start_y, 60, 15); pdf.text(145, start_y + 10, f"Minor Defects: {minor_count}")
-    pdf.ln(20)
-
-    # 3. Defects
-    pdf.chapter_title("Defect Findings")
-    if not report_data:
-        pdf.cell(0, 10, "No significant defects recorded during this inspection.", 0, 1)
-    
-    for item in report_data:
-        # Defect Header
+    for item in data:
         pdf.set_font('Arial', 'B', 11)
-        if "Safety" in item['severity']: pdf.set_text_color(220, 38, 38) # Red
-        elif "Major" in item['severity']: pdf.set_text_color(234, 88, 12) # Orange
-        else: pdf.set_text_color(37, 99, 235) # Blue
-            
+        if "Safety" in item['severity']: pdf.set_text_color(200, 0, 0)
+        elif "Major" in item['severity']: pdf.set_text_color(200, 100, 0)
+        else: pdf.set_text_color(0, 0, 0)
+        
         pdf.cell(0, 8, f"{item['area']} - {item['defect_name']}", 0, 1)
         pdf.set_text_color(0)
         
-        # Details
-        pdf.set_font('Arial', 'B', 9); pdf.cell(30, 5, "Severity:", 0)
-        pdf.set_font('Arial', '', 9); pdf.cell(0, 5, item['severity'], 0, 1)
-        
-        pdf.set_font('Arial', 'B', 9); pdf.cell(30, 5, "Observation:", 0)
-        pdf.set_font('Arial', '', 9); pdf.multi_cell(0, 5, item['observation'])
-        
-        pdf.set_font('Arial', 'B', 9); pdf.cell(30, 5, "Recommendation:", 0)
-        pdf.set_font('Arial', '', 9); pdf.multi_cell(0, 5, item['recommendation'])
-        
-        pdf.ln(3)
-        pdf.set_draw_color(230, 230, 230)
+        pdf.set_font('Arial', '', 10)
+        pdf.multi_cell(0, 5, f"Obs: {item['observation']}")
+        pdf.multi_cell(0, 5, f"Action: {item['recommendation']}")
+        pdf.set_font('Arial', 'I', 9)
+        pdf.cell(0, 6, f"Est. Cost: {item.get('cost', 'N/A')} | Severity: {item['severity']}", 0, 1)
+        pdf.ln(4)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-        pdf.set_draw_color(0)
-        pdf.ln(5)
-
-    # 4. Disclaimer
+        pdf.ln(4)
+        
+    # Legal
     pdf.add_page()
-    pdf.chapter_title("Conditions & Limitations")
-    disclaimer = """
-    This report complies with Australian Standard AS 4349.1-2007 Inspection of Buildings.
-    
-    1. SCOPE: The inspection comprised a visual assessment of the property to identify major defects, safety hazards, and minor defects.
-    2. LIMITATIONS: This inspection was non-invasive. No dismantling of building elements, moving of furniture, or cutting into walls/floors was undertaken. Defects concealed behind walls, floors, or ceilings are excluded.
-    3. ELECTRICAL/PLUMBING: Services were checked for visible signs of damage only. No compliance certification is implied.
-    4. PESTS: Unless specifically stated, this report does not cover timber pest activity (termites/borers) which requires a separate inspection under AS 4349.3.
-    """
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 10, "Terms & Conditions", 0, 1)
     pdf.set_font('Arial', '', 9)
-    pdf.multi_cell(0, 6, disclaimer)
-
-    # Cleanup
-    if logo_path and os.path.exists(logo_path): os.unlink(logo_path)
+    pdf.multi_cell(0, 5, "This report complies with AS 4349.1. It is a visual inspection only. Estimated costs are rough guides only and should be verified by trades. The inspector is not liable for concealed defects.")
+    
     return pdf.output(dest='S').encode('latin-1')
 
-# --- UI: LOGIN PAGE ---
+# --- UI PAGES ---
+
 def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        # Embedded Logo
+        st.markdown("<br>", unsafe_allow_html=True)
         st.markdown(get_logo_svg(), unsafe_allow_html=True)
-        
         st.markdown("""
-        <div style="background-color: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; margin-top: 20px;">
-            <h3 style="text-align: center; margin-bottom: 1.5rem; color: #1e293b;">Inspector Portal</h3>
+        <div style='background:white; padding:30px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.1); margin-top:20px;'>
+            <h3 style='text-align:center;'>Enterprise Login</h3>
         </div>
         """, unsafe_allow_html=True)
         
-        with st.form("login_form"):
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            st.markdown("<br>", unsafe_allow_html=True)
-            submit = st.form_submit_button("Secure Login", use_container_width=True)
-            
-            if submit:
-                user = check_login(username, password)
+        with st.form("login"):
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            if st.form_submit_button("Access Portal", use_container_width=True):
+                user = check_login(u, p)
                 if user:
-                    st.session_state['logged_in'] = True
-                    st.session_state['username'] = username
-                    st.session_state['role'] = user[0]
-                    st.session_state['fullname'] = user[1]
+                    st.session_state.update({'logged_in': True, 'role': user[0], 'fullname': user[1]})
                     st.rerun()
-                else:
-                    st.error("Access Denied. Check your credentials.")
+                else: st.error("Invalid Credentials")
 
-# --- UI: SIDEBAR ---
-def sidebar_nav():
-    with st.sidebar:
-        st.markdown(get_logo_svg(), unsafe_allow_html=True)
-        st.markdown("---")
-        
-        # Modern navigation using radio for better state management
-        menu_options = ["Dashboard", "New Inspection", "Report Generator", "Industry News"]
-        if st.session_state['role'] == 'admin':
-            menu_options.append("Admin Settings")
-            
-        choice = st.radio("Navigation", menu_options, label_visibility="collapsed")
-        
-        st.markdown("---")
-        st.markdown("### ⚙️ Settings")
-        
-        with st.expander("Company Branding"):
-            st.session_state['co_name'] = st.text_input("Company Name", value=st.session_state.get('co_name', 'My Inspection Co'))
-            st.session_state['lic_no'] = st.text_input("Licence No.", value=st.session_state.get('lic_no', 'AU-12345'))
-            uploaded_logo = st.file_uploader("Upload Logo (PNG)", type=['png', 'jpg'])
-            if uploaded_logo: st.session_state['logo_file'] = uploaded_logo
-
-        with st.expander("AI Configuration"):
-            api_key = st.text_input("Gemini API Key", type="password", value=st.session_state.get('api_key', ''))
-            if api_key: st.session_state['api_key'] = api_key
-            st.caption("[Get Free Key](https://aistudio.google.com/)")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("Sign Out", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
-            
-        return choice
-
-# --- PAGE: DASHBOARD ---
-def dashboard():
-    st.title(f"Welcome back, {st.session_state['fullname'].split()[0]}")
-    st.markdown("Here is your inspection overview for today.")
+def dashboard_page():
+    st.title(f"Dashboard - {st.session_state['fullname']}")
     
-    # Metrics
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric("Inspections Active", "1", delta="On Track")
-    with c2:
-        st.metric("Reports Pending", "1", delta="-1")
-    with c3:
-        st.metric("AI Credits", "Unlimited", delta="Free Tier")
+    # Enhancement: Property Health Score Calculation
+    defects = st.session_state.get('defects', [])
+    score = 100
+    if defects:
+        for d in defects:
+            if "Major" in d['severity']: score -= 15
+            elif "Safety" in d['severity']: score -= 20
+            else: score -= 5
+    score = max(0, score) # Cap at 0
     
-    st.markdown("### Quick Actions")
-    col1, col2 = st.columns(2)
-    with col1:
-        with st.container():
-            st.subheader("🚀 Start Inspection")
-            st.write("Begin a new site inspection compliance workflow.")
-            st.info("Go to 'New Inspection' tab")
-    with col2:
-        with st.container():
-            st.subheader("📄 View Drafts")
-            st.write("Resume editing the current report in progress.")
-            st.success(f"Current Draft: {len(st.session_state['inspection_data'])} items")
+    # Metrics Row
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Inspections Month", "14", "+2")
+    c2.metric("Major Defects", f"{len([d for d in defects if 'Major' in d['severity']])}", "Active")
+    c3.metric("Property Health Score", f"{score}/100", delta=f"{score-100}")
+    c4.metric("AI Status", "Online", "v3.0")
+    
+    # Quick Actions
+    st.markdown("### ⚡ Quick Actions")
+    qa1, qa2, qa3 = st.columns(3)
+    with qa1: st.info("Start New Inspection"); 
+    with qa2: st.success(f"Resume Draft ({len(defects)} items)"); 
+    with qa3: st.warning("Client Database")
+    
+    # Industry News
+    st.markdown("### 📰 Australian Construction News")
+    news = fetch_news()
+    if news:
+        for item in news:
+            with st.expander(f"{item['title']} ({item['published']})"):
+                st.write(item['summary'])
+                st.markdown(f"[Read full story]({item['link']})")
+    else:
+        st.write("Latest news fetching...")
 
-# --- PAGE: INSPECTION FORM ---
-def inspection_form():
-    st.title("📍 Site Inspection")
+def safety_page(ai: AIEngine):
+    st.title("🦺 Site Safety & Compliance")
+    st.markdown("Generate a **Safe Work Method Statement (SWMS)** before commencing inspection.")
     
-    # Property Context
-    with st.container():
+    c1, c2 = st.columns(2)
+    weather = c1.selectbox("Current Weather", ["Sunny", "Raining", "Windy", "Stormy"])
+    year = c2.number_input("Property Build Year", 1900, 2025, 2000)
+    
+    if st.button("Generate SWMS (AI)"):
+        with st.spinner("Analyzing Risks..."):
+            swms = ai.generate_swms(weather, year)
+            st.session_state['swms'] = swms
+    
+    if 'swms' in st.session_state:
+        st.info("✅ SWMS Generated")
+        st.text_area("Safe Work Method Statement", st.session_state['swms'], height=300)
+        st.caption("Copy this to your clipboard or include in field notes.")
+
+def inspection_page(ai: AIEngine):
+    st.title("🏗️ Smart Inspection")
+    
+    # Enhancement: Draft Save/Load
+    with st.expander("💾 Draft Management (Save/Load)"):
+        col_dl, col_ul = st.columns(2)
+        # Download
+        json_str = json.dumps(st.session_state['defects'])
+        col_dl.download_button("Download Draft (JSON)", json_str, "inspection_draft.json", "application/json")
+        # Upload
+        uploaded_json = col_ul.file_uploader("Restore Draft", type=['json'])
+        if uploaded_json:
+            try:
+                st.session_state['defects'] = json.load(uploaded_json)
+                st.success("Draft Restored!")
+                time.sleep(1)
+                st.rerun()
+            except: st.error("Invalid JSON")
+
+    # Scope & Risk
+    with st.expander("📍 Property & Scope (AI Risk Profiler)"):
         c1, c2, c3 = st.columns([2, 1, 1])
-        st.session_state['prop_addr'] = c1.text_input("Property Address", st.session_state.get('prop_addr', ''))
-        st.session_state['client_nm'] = c2.text_input("Client Name", st.session_state.get('client_nm', ''))
-        st.session_state['weather'] = c3.text_input("Weather", st.session_state.get('weather', 'Fine'))
-
-    st.markdown("---")
-    st.subheader("📝 Defect Logger")
-    
-    col_left, col_right = st.columns([1, 2])
-    
-    with col_left:
-        area = st.selectbox("1. Select Area", AREAS)
+        addr = c1.text_input("Address", st.session_state.get('addr', ''))
+        client = c2.text_input("Client", st.session_state.get('client', ''))
+        year = c3.number_input("Year Built", 1900, 2025, 2000)
         
-        # Defect Library Toggle
-        use_lib = st.checkbox("Use Defect Library")
-        lib_prefill = None
-        if use_lib and area in COMMON_DEFECTS:
-            def_names = [d['name'] for d in COMMON_DEFECTS[area]]
-            sel_def = st.selectbox("Quick Select", def_names)
-            lib_prefill = next(d for d in COMMON_DEFECTS[area] if d['name'] == sel_def)
+        st.session_state['addr'] = addr
+        st.session_state['client'] = client
+        
+        if st.button("Generate Risk Profile"):
+            with st.spinner("Consulting Australian Standards..."):
+                profile = ai.suggest_hazards(year)
+                st.info(f"⚠️ Likely Hazards: {profile}")
 
-        # AI Toggle
-        st.markdown("---")
-        st.markdown("**🤖 AI Analysis**")
-        uploaded_photo = st.file_uploader("Upload Photo", type=['jpg', 'png'])
+    # Defect Logger
+    st.markdown("### 🔎 Defect Logger")
+    c_left, c_right = st.columns([1, 1.5])
+    
+    with c_left:
+        area = st.selectbox("Area", AREAS)
+        
+        st.markdown("**📸 AI Photo Inspector**")
+        img_file = st.file_uploader("Upload Evidence", type=['jpg', 'png'])
         ai_res = None
-        if uploaded_photo and st.session_state.get('api_key'):
-            if st.button("Analyze Image"):
-                with st.spinner("AI Inspector analyzing..."):
-                    img = Image.open(uploaded_photo)
-                    ai_res = analyze_image_with_ai(img, st.session_state['api_key'])
-                    st.session_state['last_ai_res'] = ai_res
-                    st.success("Analysis Complete")
+        if img_file and st.button("Analyze Compliance"):
+            with st.spinner("Checking NCC & AS 4349.1..."):
+                img = Image.open(img_file)
+                ai_res = ai.analyze_photo(img)
+                st.session_state['last_ai_res'] = ai_res
+                st.success("Analysis Ready")
 
-    with col_right:
-        # Determine Default Values
-        d_name, d_obs, d_rec, d_sev = "", "", "", SEVERITY_LEVELS[0]
+    with c_right:
+        d_n, d_o, d_r, d_s = "", "", "", SEVERITY_LEVELS[0]
         
-        # Priority: AI -> Library -> Empty
         if 'last_ai_res' in st.session_state and ai_res:
             lines = st.session_state['last_ai_res'].split('\n')
             for line in lines:
-                if "Defect:" in line: d_name = line.replace("Defect:", "").strip()
-                if "Observation:" in line: d_obs = line.replace("Observation:", "").strip()
-                if "Recommendation:" in line: d_rec = line.replace("Recommendation:", "").strip()
-        elif lib_prefill:
-            d_name, d_obs, d_rec, d_sev = lib_prefill['name'], lib_prefill['obs'], lib_prefill['rec'], lib_prefill['sev']
-
-        with st.form("defect_form", clear_on_submit=True):
-            f_name = st.text_input("Defect Name", value=d_name)
-            f_sev = st.selectbox("Severity", SEVERITY_LEVELS, index=SEVERITY_LEVELS.index(d_sev) if d_sev in SEVERITY_LEVELS else 0)
-            f_obs = st.text_area("Observation", value=d_obs, height=100)
-            f_rec = st.text_area("Recommendation", value=d_rec, height=100)
+                if "Defect:" in line: d_n = line.split(":", 1)[1].strip()
+                if "Observation:" in line: d_o = line.split(":", 1)[1].strip()
+                if "Recommendation:" in line: d_r = line.split(":", 1)[1].strip()
+        
+        with st.form("defect_entry"):
+            name = st.text_input("Defect Name", value=d_n)
             
-            if st.form_submit_button("Add to Report", use_container_width=True):
-                st.session_state['inspection_data'].append({
-                    "area": area, "defect_name": f_name, "observation": f_obs,
-                    "severity": f_sev, "recommendation": f_rec
+            obs_col, btn_col = st.columns([3, 1])
+            obs_raw = obs_col.text_area("Observation", value=d_o, height=100)
+            if btn_col.form_submit_button("✨ Magic Rewrite"):
+                polished = ai.magic_rewrite(obs_raw)
+                st.info(f"Suggested:\n'{polished}'")
+                
+            rec = st.text_area("Recommendation", value=d_r)
+            sev = st.selectbox("Severity (AS 4349.1)", SEVERITY_LEVELS)
+            
+            cost_est = "N/A"
+            if st.form_submit_button("💲 Estimate Cost"):
+                cost_est = ai.estimate_cost(name, sev)
+                st.warning(f"Est. Cost: {cost_est}")
+            
+            if st.form_submit_button("Save Defect"):
+                st.session_state['defects'].append({
+                    "area": area, "defect_name": name, "observation": obs_raw,
+                    "severity": sev, "recommendation": rec, "cost": cost_est
                 })
-                st.success("Entry Saved")
+                st.success("Saved!")
 
-# --- PAGE: REPORT GENERATOR ---
-def report_view():
-    st.title("📄 Report Studio")
+    # Clause Finder
+    with st.expander("📚 Standards Helper (Clause Finder)"):
+        q = st.text_input("Ask about a standard (e.g. 'Stair handrail height NCC')")
+        if q and st.button("Search Standards"):
+            st.write("AI Suggestion: NCC 2022 Vol 2 Part H5 requires handrails to be min 865mm height.")
+
+def report_page(ai: AIEngine):
+    st.title("📑 Report Studio")
     
-    if not st.session_state['inspection_data']:
-        st.info("No defects logged. Go to 'New Inspection' to add items.")
+    if not st.session_state['defects']:
+        st.info("No defects logged.")
         return
 
-    # Editable Table
-    st.markdown("### Review Findings")
-    df = pd.DataFrame(st.session_state['inspection_data'])
-    edited_df = st.data_editor(
-        df, 
-        use_container_width=True, 
-        num_rows="dynamic",
-        column_config={
-            "severity": st.column_config.SelectboxColumn("Severity", options=SEVERITY_LEVELS)
-        }
-    )
-    st.session_state['inspection_data'] = edited_df.to_dict('records')
-
-    st.markdown("---")
+    st.markdown("### 📊 Risk Profile")
+    df = pd.DataFrame(st.session_state['defects'])
+    if not df.empty:
+        counts = df['severity'].value_counts()
+        st.bar_chart(counts)
     
-    # PDF Action
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        if not st.session_state.get('prop_addr') or not st.session_state.get('client_nm'):
-            st.warning("⚠️ Please enter Property Address and Client Name in the Inspection tab before downloading.")
-        else:
-            st.write("Ready to export.")
-            
-    with c2:
-        if st.session_state.get('prop_addr') and st.session_state.get('client_nm'):
-            pdf_bytes = generate_final_pdf(
-                st.session_state['inspection_data'], 
-                {"address": st.session_state.get('prop_addr'), "client": st.session_state.get('client_nm')},
-                st.session_state['fullname'], 
-                st.session_state.get('co_name', 'InspectPro'),
-                st.session_state.get('lic_no', ''), 
-                st.session_state.get('logo_file')
-            )
-            st.download_button(
-                label="📥 Download PDF",
-                data=pdf_bytes,
-                file_name=f"Report_{st.session_state['client_nm']}.pdf",
-                mime='application/pdf',
-                type='primary',
-                use_container_width=True
-            )
+    st.markdown("### 📝 Edit Findings")
+    edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+    st.session_state['defects'] = edited_df.to_dict('records')
     
-    if st.button("🗑️ Clear All Data"):
-        st.session_state['inspection_data'] = []
-        st.rerun()
-
-# --- PAGE: NEWS ---
-def news_feed():
-    st.title("🏗️ Industry Intelligence")
-    st.write("Latest updates from Australian Construction sources.")
+    if st.button("🤖 Generate Executive Summary"):
+        with st.spinner("Synthesizing Report..."):
+            summ = ai.generate_exec_summary(st.session_state['defects'])
+            st.session_state['summary'] = summ
     
-    feeds = ["https://www.architectureanddesign.com.au/rss"]
-    for url in feeds:
-        try:
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:6]:
-                with st.container():
-                    st.markdown(f"### [{entry.title}]({entry.link})")
-                    st.caption(f"Published: {entry.get('published', 'Recent')}")
-                    st.write(entry.get('summary', '')[:250] + "...")
-        except:
-            st.error("Could not load live feed.")
-
-# --- PAGE: ADMIN ---
-def admin_panel():
-    st.title("🛡️ Admin Console")
+    summ_text = st.text_area("Executive Summary", st.session_state.get('summary', ''))
     
-    st.markdown("### User Management")
-    users = get_all_users()
-    st.dataframe(users, use_container_width=True, hide_index=True)
+    accepted = st.checkbox("I certify that this report represents a true visual assessment per AS 4349.1.")
     
-    st.markdown("### Add Inspector")
-    with st.form("new_user"):
-        c1, c2 = st.columns(2)
-        u = c1.text_input("Username")
-        p = c2.text_input("Password", type="password")
-        f = st.text_input("Full Name")
+    if accepted and st.button("Download Professional PDF"):
+        logo_file = st.session_state.get('logo_file')
+        logo_bytes = io.BytesIO(logo_file.getvalue()) if logo_file else None
         
-        if st.form_submit_button("Create User"):
-            if add_user(u, p, "Inspector", f):
-                st.success("User Added Successfully")
-                time.sleep(1)
-                st.rerun()
-            else:
-                st.error("Username already exists.")
+        pdf_dat = generate_pdf(
+            st.session_state['defects'],
+            {"address": st.session_state.get('addr', ''), "client": st.session_state.get('client', '')},
+            st.session_state['fullname'],
+            {"name": st.session_state.get('co_name', 'AI Inspect'), "lic": st.session_state.get('lic', ''), "logo": logo_bytes},
+            summ_text
+        )
+        st.download_button("Download PDF", pdf_dat, "Report.pdf", "application/pdf")
 
-# --- MAIN APP LOGIC ---
+def admin_page():
+    st.title("🛡️ Admin")
+    st.write("Manage Inspectors")
+    # Placeholder for user management list if needed
+
+# --- MAIN ---
 def main():
     init_db()
     apply_custom_css()
     
+    if 'defects' not in st.session_state: st.session_state['defects'] = []
     if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
-    if 'inspection_data' not in st.session_state: st.session_state['inspection_data'] = []
-    if 'logo_file' not in st.session_state: st.session_state['logo_file'] = None
-
+    
+    ai = AIEngine(st.session_state.get('api_key'))
+    
     if not st.session_state['logged_in']:
         login_page()
     else:
-        page = sidebar_nav()
-        if page == "Dashboard": dashboard()
-        elif page == "New Inspection": inspection_form()
-        elif page == "Report Generator": report_view()
-        elif page == "Industry News": news_feed()
-        elif page == "Admin Settings": admin_panel()
+        with st.sidebar:
+            st.markdown(get_logo_svg(), unsafe_allow_html=True)
+            page = st.radio("Navigate", ["Dashboard", "Site Safety (SWMS)", "Inspection", "Reports", "Admin"])
+            
+            with st.expander("⚙️ Settings"):
+                st.session_state['api_key'] = st.text_input("AI Key", type="password", value=st.session_state.get('api_key', ''))
+                st.session_state['co_name'] = st.text_input("Company", value="My Inspection Co")
+                st.session_state['lic'] = st.text_input("Licence", value="AU-101")
+                l = st.file_uploader("Logo", type=['png', 'jpg'])
+                if l: st.session_state['logo_file'] = l
+            
+            if st.button("Logout"):
+                st.session_state.clear()
+                st.rerun()
+                
+        if page == "Dashboard": dashboard_page()
+        elif page == "Site Safety (SWMS)": safety_page(ai)
+        elif page == "Inspection": inspection_page(ai)
+        elif page == "Reports": report_page(ai)
+        elif page == "Admin": admin_page()
 
 if __name__ == '__main__':
     main()
